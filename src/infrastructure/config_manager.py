@@ -60,25 +60,17 @@ class ConfigManager:
 
     def get_minimax_api_key(self) -> Optional[str]:
         """获取 MiniMax API Key"""
-        # 环境变量优先
         key = os.getenv("MINIMAX_API_KEY") or os.getenv("MINIMAX_TTS_API_KEY")
         if key:
             return key
-        # opencode.json fallback
-        try:
-            return self._opencode.get("provider", {}).get("minimax", {}).get("options", {}).get("apiKey")
-        except Exception:
-            return None
+        return self._opencode.get("provider", {}).get("minimax", {}).get("options", {}).get("apiKey")
 
     def get_minimax_group_id(self) -> Optional[str]:
         """获取 MiniMax Group ID"""
         gid = os.getenv("MINIMAX_GROUP_ID")
         if gid:
             return gid
-        try:
-            return self._opencode.get("provider", {}).get("minimax", {}).get("options", {}).get("groupId")
-        except Exception:
-            return None
+        return self._opencode.get("provider", {}).get("minimax", {}).get("options", {}).get("groupId")
 
     # ── Qwen / DashScope ─────────────────────────────────────
 
@@ -87,20 +79,14 @@ class ConfigManager:
         key = os.getenv("QWEN_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
         if key:
             return key
-        try:
-            return self._opencode.get("provider", {}).get("bailian", {}).get("options", {}).get("apiKey")
-        except Exception:
-            return None
+        return self._opencode.get("provider", {}).get("bailian", {}).get("options", {}).get("apiKey")
 
     def get_qwen_base_url(self) -> Optional[str]:
         """获取 Qwen Base URL"""
         url = os.getenv("DASHSCOPE_BASE_URL")
         if url:
             return url
-        try:
-            return self._opencode.get("provider", {}).get("bailian", {}).get("options", {}).get("baseURL")
-        except Exception:
-            return None
+        return self._opencode.get("provider", {}).get("bailian", {}).get("options", {}).get("baseURL")
 
     # ── 检查 ──────────────────────────────────────────────────
 

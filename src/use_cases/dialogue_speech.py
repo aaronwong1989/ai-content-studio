@@ -9,9 +9,10 @@
 """
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict, Tuple, Iterator
+from typing import List, Optional, Dict, Tuple
 import re as _re
 import logging
+from itertools import cycle
 
 from ..entities import AudioSegment, EngineResult, TTSRequest, VoiceConfig
 from .tts_use_cases import TTSEngineInterface
@@ -19,12 +20,7 @@ from ..adapters.audio_adapters import FFmpegAudioProcessor
 
 logger = logging.getLogger(__name__)
 
-# 对话解析正则（用于提取 [Speaker]: 标签位置）
-_SPEAKER_TAG_PATTERN = _re.compile(
-    r"\[([^\],]+?)(?:,\s*([^\]]+?))?\]:",
-    _re.DOTALL,
-)
-# 段内容解析（提取各段内容）
+# 对话解析正则
 _SEGMENT_PATTERN = _re.compile(
     r"\[([^\],]+?)(?:,\s*([^\]]+?))?\]:\s*((?:.|\n)*?)(?=\[([^\],]+?)(?:,\s*([^\]]+?))?\]:|$)",
     _re.DOTALL,
@@ -66,22 +62,27 @@ class VoiceAllocator:
 
     def __init__(self, roles_config: Optional[Dict] = None):
         self._roles = roles_config or {}
-        self._pool: Iterator[str] = iter(self.DEFAULT_VOICES)
+        # 预构建小写键映射，O(1) 查找
+        self._lower_roles: Dict[str, Tuple[str, dict]] = {
+            k.lower(): (k, v) for k, v in self._roles.items()
+        }
+        self._pool: cycle = cycle(self.DEFAULT_VOICES)
         self._assigned: Dict[str, str] = {}
 
     def get_voice(self, speaker: str) -> str:
         """获取 speaker 对应的 voice_id"""
-        # 优先使用 roles_config 中的显式映射
-        for role_name, role_cfg in self._roles.items():
-            if role_name.lower() == speaker.lower():
-                if isinstance(role_cfg, dict):
-                    return role_cfg.get("voice", self.DEFAULT_VOICES[0])
-                return str(role_cfg)
+        # 优先使用 roles_config 中的显式映射（O(1) 小写键查找）
+        key = speaker.lower()
+        if key in self._lower_roles:
+            _, role_cfg = self._lower_roles[key]
+            if isinstance(role_cfg, dict):
+                return role_cfg.get("voice", self.DEFAULT_VOICES[0])
+            return str(role_cfg)
         # 其次使用已分配的角色
         if speaker in self._assigned:
             return self._assigned[speaker]
-        # 轮询分配
-        voice = next(self._pool, self.DEFAULT_VOICES[0])
+        # 轮询分配（cycle 永不耗尽）
+        voice = next(self._pool)
         self._assigned[speaker] = voice
         return voice
 
@@ -104,11 +105,8 @@ def compute_role_pan_values(unique_roles: List[str]) -> Dict[str, float]:
 
 
 def _get_engine_name(engine: TTSEngineInterface) -> str:
-    """获取引擎名称，带降级处理"""
-    try:
-        return engine.get_engine_name()
-    except Exception:
-        return "unknown"
+    """获取引擎名称"""
+    return getattr(engine, "get_engine_name", lambda: "unknown")()
 
 
 @dataclass
@@ -187,11 +185,12 @@ class DialogueSpeechUseCase:
 
         # 5. FFmpeg 混音
         if len(audio_files) == 1 and not bgm_file:
-            # 单段无 BGM：直接重命名
+            # 单段无 BGM：直接重命名，使用真实时长
             audio_files[0].rename(output_file)
+            duration = self.audio_processor._get_duration(output_file)
             return EngineResult.success(
                 file_path=output_file,
-                duration=0.0,
+                duration=duration,
                 engine_name=_get_engine_name(self.engine),
             )
 
@@ -205,9 +204,8 @@ class DialogueSpeechUseCase:
             sample_rate=sample_rate,
         )
 
-        # 6. 清理临时文件（保留输出文件）
+        # 6. 清理临时文件
         for f in audio_files:
-            if f.exists() and f != output_file:
-                f.unlink(missing_ok=True)
+            f.unlink(missing_ok=True)
 
         return merge_result

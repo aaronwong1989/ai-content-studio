@@ -37,9 +37,6 @@ class Container:
     minimax_llm_engine: Optional[MiniMaxLLMEngine] = None
     qwen_llm_engine: Optional[QwenLLMEngine] = None
 
-    # Qwen TTS 引擎（用于 qwen_tts 类型）
-    qwen_tts_engine: Optional["QwenTTSEngine"] = None
-
     # 音频处理器
     audio_processor: Optional[FFmpegAudioProcessor] = None
 
@@ -78,10 +75,9 @@ class Container:
                 api_key=qwen_api_key,
             )
 
-        # MiniMax LLM 配置
-        minimax_llm_key = os.getenv("MINIMAX_API_KEY")
-        if minimax_llm_key:
-            container.minimax_llm_engine = MiniMaxLLMEngine(api_key=minimax_llm_key)
+        # MiniMax LLM 配置（复用 minimax_api_key）
+        if minimax_api_key:
+            container.minimax_llm_engine = MiniMaxLLMEngine(api_key=minimax_api_key)
 
         # Qwen LLM 配置
         qwen_llm_key = os.getenv("QWEN_API_KEY") or os.getenv("DASHSCOPE_API_KEY")

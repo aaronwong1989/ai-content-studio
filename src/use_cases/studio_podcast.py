@@ -13,10 +13,10 @@ from typing import Optional, Dict
 import logging
 
 from ..entities import EngineResult
-from .dialogue_speech import DialogueSpeechUseCase
+from ..adapters.audio_adapters import FFmpegAudioProcessor
+from .dialogue_speech import DialogueSpeechUseCase, parse_dialogue_segments
 from .tts_use_cases import TTSEngineInterface
 from ..adapters.llm_adapters import LLMEngineInterface
-from ..adapters.audio_adapters import FFmpegAudioProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -112,14 +112,12 @@ class StudioPodcastUseCase:
 
         logger.info(f"LLM 生成脚本成功，长度: {len(script_text)} 字符")
 
-        # 4. 解析对话（验证格式）
-        from .dialogue_speech import parse_dialogue_segments
-
-        segments = parse_dialogue_segments(script_text, roles_config)
-        if not segments:
+        # 4. 验证脚本格式（早期失败快速返回）
+        parsed = parse_dialogue_segments(script_text)
+        if not parsed:
             return EngineResult.failure("LLM 生成的脚本无法解析为对话格式")
 
-        logger.info(f"解析到 {len(segments)} 个对话片段")
+        logger.info(f"解析到 {len(parsed)} 个对话片段")
 
         # 5. 委托 DialogueSpeechUseCase 执行 TTS
         dialogue_uc = DialogueSpeechUseCase(
