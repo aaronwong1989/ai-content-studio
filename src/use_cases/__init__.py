@@ -14,8 +14,11 @@ from .tts_use_cases import (
     SynthesizeSpeechUseCase,
     BatchSynthesizeUseCase,
 )
+from .dialogue_speech import DialogueSpeechUseCase, parse_dialogue_segments
 
 __all__ = [
     "SynthesizeSpeechUseCase",
     "BatchSynthesizeUseCase",
+    "DialogueSpeechUseCase",
+    "parse_dialogue_segments",
 ]

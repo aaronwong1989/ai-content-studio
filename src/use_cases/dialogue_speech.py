@@ -1,228 +1,213 @@
 """
-对话播报用例 - 对话脚本解析 + TTS 合成
+对话脚本解析 + 多角色 TTS 用例
 
 职责：
-- 解析对话脚本（[角色名]: 发言内容 格式）
-- 批量 TTS 合成
-- 音频合并与混音
+- 解析对话脚本格式 [Speaker]: text 或 [Speaker, emotion]: text
+- 为各角色分配音色
+- 调用 TTS 引擎合成各段
+- FFmpeg 混音（立体声 + 可选 BGM）
 """
-import re
-import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple, Iterator
+import re as _re
+import logging
 
-from ..entities import AudioSegment, EngineResult
-from .tts_use_cases import TTSEngineInterface, BatchSynthesizeUseCase
+from ..entities import AudioSegment, EngineResult, TTSRequest, VoiceConfig
+from .tts_use_cases import TTSEngineInterface
 from ..adapters.audio_adapters import FFmpegAudioProcessor
 
 logger = logging.getLogger(__name__)
 
-# 默认角色音色映射
-DEFAULT_ROLES_CONFIG: Dict[str, str] = {
-    "Alex": "male-qn-qingse",
-    "Sam": "male-qn-jingpin",
-    "Kim": "female-tianmei",
-}
+# 对话解析正则（用于提取 [Speaker]: 标签位置）
+_SPEAKER_TAG_PATTERN = _re.compile(
+    r"\[([^\],]+?)(?:,\s*([^\]]+?))?\]:",
+    _re.DOTALL,
+)
+# 段内容解析（提取各段内容）
+_SEGMENT_PATTERN = _re.compile(
+    r"\[([^\],]+?)(?:,\s*([^\]]+?))?\]:\s*((?:.|\n)*?)(?=\[([^\],]+?)(?:,\s*([^\]]+?))?\]:|$)",
+    _re.DOTALL,
+)
 
 
-def parse_dialogue_segments(
-    script_text: str,
-    roles_config: Optional[Dict[str, str]] = None,
-) -> List[AudioSegment]:
+def parse_dialogue_segments(text: str) -> List[Tuple[AudioSegment, str]]:
     """
-    解析对话脚本，返回 AudioSegment 列表
+    解析对话脚本文本，返回 (AudioSegment, emotion) 元组列表
 
     支持格式：
-        [角色名]: 发言内容
-        [Alex]: 大家好，今天我们来聊聊...
+      [Speaker]: text content
+      [Speaker, emotion]: text content
+
+    支持同行多角色：[Alex]: 你好[Sam]: 你好
 
     Args:
-        script_text: 对话脚本文本
-        roles_config: 角色音色映射，如 {"Alex": "male-qn-qingse"}
+        text: 对话脚本文本
 
     Returns:
-        AudioSegment 列表，解析失败返回空列表
+        List[Tuple[AudioSegment, str]]: (音频片段, 情感) 元组列表
     """
-    config = roles_config or DEFAULT_ROLES_CONFIG
-
-    # 匹配 [角色名]: 发言内容
-    pattern = re.compile(r"^\[([^\]]+)\]:\s*(.+)$", re.MULTILINE)
-    matches = pattern.findall(script_text)
-
-    if not matches:
-        return []
-
-    segments: List[AudioSegment] = []
-    for speaker, text in matches:
-        speaker = speaker.strip()
-        text = text.strip()
-
-        if not text:
+    result: List[Tuple[AudioSegment, str]] = []
+    for match in _SEGMENT_PATTERN.finditer(text):
+        speaker = match.group(1).strip()
+        emotion = match.group(2).strip() if match.group(2) else "neutral"
+        content = match.group(3).strip()
+        if not content:
             continue
-
-        # 查找音色 ID（优先使用 roles_config，否则使用默认映射）
-        voice_id = config.get(speaker)
-        if voice_id is None:
-            # 尝试默认映射
-            voice_id = DEFAULT_ROLES_CONFIG.get(speaker, "male-qn-qingse")
-            logger.warning(
-                f"角色 '{speaker}' 未在 roles_config 中指定，使用默认音色: {voice_id}"
-            )
-
-        try:
-            segment = AudioSegment(text=text, voice_id=voice_id)
-            segments.append(segment)
-        except ValueError as e:
-            logger.warning(f"跳过无效片段 [{speaker}]: {e}")
-            continue
-
-    return segments
+        segment = AudioSegment(text=content, voice_id=speaker)
+        result.append((segment, emotion))
+    return result
 
 
+class VoiceAllocator:
+    """音色分配器 - 将 speaker name 映射到 voice_id"""
+
+    DEFAULT_VOICES = ["cherry", "ethan", "chelsie"]
+
+    def __init__(self, roles_config: Optional[Dict] = None):
+        self._roles = roles_config or {}
+        self._pool: Iterator[str] = iter(self.DEFAULT_VOICES)
+        self._assigned: Dict[str, str] = {}
+
+    def get_voice(self, speaker: str) -> str:
+        """获取 speaker 对应的 voice_id"""
+        # 优先使用 roles_config 中的显式映射
+        for role_name, role_cfg in self._roles.items():
+            if role_name.lower() == speaker.lower():
+                if isinstance(role_cfg, dict):
+                    return role_cfg.get("voice", self.DEFAULT_VOICES[0])
+                return str(role_cfg)
+        # 其次使用已分配的角色
+        if speaker in self._assigned:
+            return self._assigned[speaker]
+        # 轮询分配
+        voice = next(self._pool, self.DEFAULT_VOICES[0])
+        self._assigned[speaker] = voice
+        return voice
+
+
+def compute_role_pan_values(unique_roles: List[str]) -> Dict[str, float]:
+    """
+    计算每个角色的立体声声道值（用于 FFmpeg pan filter）
+
+    公式：pan = -0.8 + 1.6 * i / (n-1)
+    - 单角色：0.0（居中）
+    - 双角色：-0.8（左）、0.8（右）
+    - 多角色：均匀分布在 [-0.8, 0.8] 区间
+    """
+    if len(unique_roles) <= 1:
+        return {role: 0.0 for role in unique_roles}
+    return {
+        role: round(-0.8 + (1.6 * i / (len(unique_roles) - 1)), 2)
+        for i, role in enumerate(unique_roles)
+    }
+
+
+def _get_engine_name(engine: TTSEngineInterface) -> str:
+    """获取引擎名称，带降级处理"""
+    try:
+        return engine.get_engine_name()
+    except Exception:
+        return "unknown"
+
+
+@dataclass
 class DialogueSpeechUseCase:
     """
-    对话播报用例
+    对话脚本 TTS 用例
 
-    全流程：解析对话脚本 → 批量 TTS → 音频合并
-
-    Example:
-        >>> use_case = DialogueSpeechUseCase(
-        ...     engine=minimax_engine,
-        ...     audio_processor=FFmpegAudioProcessor(),
-        ... )
-        >>> result = use_case.execute(
-        ...     dialogue_script="[Alex]: 你好\\n[Sam]: 你好！",
-        ...     output_file=Path("output.mp3"),
-        ... )
-        >>> result.success
-        True
+    职责：
+    - 解析对话脚本
+    - 音色分配
+    - 批量 TTS 合成
+    - FFmpeg 混音（立体声 + BGM）
     """
 
-    def __init__(
-        self,
-        engine: TTSEngineInterface,
-        audio_processor: FFmpegAudioProcessor,
-    ):
-        """
-        初始化对话播报用例
-
-        Args:
-            engine: TTS 引擎
-            audio_processor: FFmpeg 音频处理器
-        """
-        self.engine = engine
-        self.audio_processor = audio_processor
-        self._batch_uc: Optional[BatchSynthesizeUseCase] = None
-
-    @property
-    def batch_uc(self) -> BatchSynthesizeUseCase:
-        """延迟创建 BatchSynthesizeUseCase"""
-        if self._batch_uc is None:
-            self._batch_uc = BatchSynthesizeUseCase(
-                engine=self.engine,
-                audio_processor=self.audio_processor,
-            )
-        return self._batch_uc
+    engine: TTSEngineInterface
+    audio_processor: FFmpegAudioProcessor
 
     def execute(
         self,
         dialogue_script: str,
         output_file: Path,
-        roles_config: Optional[Dict[str, str]] = None,
+        roles_config: Optional[Dict] = None,
         bgm_file: Optional[Path] = None,
         sample_rate: int = 32000,
     ) -> EngineResult:
         """
-        执行对话 TTS 全流程
+        执行对话脚本 TTS 合成
 
         Args:
-            dialogue_script: 对话脚本（如 "[Alex]: 你好" 格式）
-            output_file: 输出音频文件
-            roles_config: 角色音色映射
-            bgm_file: 背景音乐文件（可选）
-            sample_rate: 采样率（仅影响 BGM 混音）
-
-        Returns:
-            EngineResult: 生成结果
-        """
-        # 1. 解析对话
-        segments = parse_dialogue_segments(dialogue_script, roles_config)
-        if not segments:
-            return EngineResult.failure("对话脚本解析失败，无有效片段")
-
-        logger.info(f"解析到 {len(segments)} 个对话片段")
-
-        # 2. 批量 TTS 合成
-        merge_result = self.batch_uc.execute(
-            segments=segments,
-            output_file=output_file,
-            merge=True,
-        )
-
-        if not merge_result.success:
-            return merge_result
-
-        # 3. 混音（如果提供了 BGM）
-        if bgm_file and bgm_file.exists():
-            logger.info(f"正在混音 BGM: {bgm_file}")
-            return self._mix_with_bgm(output_file, bgm_file, sample_rate)
-
-        return merge_result
-
-    def _mix_with_bgm(
-        self,
-        voice_file: Path,
-        bgm_file: Path,
-        sample_rate: int,
-    ) -> EngineResult:
-        """
-        将语音与背景音乐混音
-
-        Args:
-            voice_file: 语音文件
-            bgm_file: BGM 文件
+            dialogue_script: 对话脚本文本
+            output_file: 输出音频文件路径
+            roles_config: 角色音色映射 {"Alex": {"voice": "cherry", ...}, ...}
+            bgm_file: 背景音乐文件路径
             sample_rate: 采样率
 
         Returns:
-            EngineResult: 混音结果
+            EngineResult: 合成结果
         """
-        import subprocess
+        # 1. 解析对话
+        segments = parse_dialogue_segments(dialogue_script)
+        if not segments:
+            return EngineResult.failure("对话脚本为空或无法解析")
 
-        output_file = voice_file.with_suffix(".mixed.mp3")
-        voice_file.rename(output_file)  # 临时移动
+        # 2. 分配音色
+        allocator = VoiceAllocator(roles_config)
+        unique_roles: List[str] = []
+        segments_with_voices: List[Tuple[AudioSegment, str, str]] = []
+        for segment, emotion in segments:
+            voice_id = allocator.get_voice(segment.voice_id)
+            if segment.voice_id not in unique_roles:
+                unique_roles.append(segment.voice_id)
+            segments_with_voices.append((segment, emotion, voice_id))
 
-        try:
-            cmd = [
-                "ffmpeg",
-                "-i", str(output_file),
-                "-i", str(bgm_file),
-                "-filter_complex",
-                "[0:a]volume=1.0[voice];[1:a]volume=0.3[bgm];[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2",
-                "-c:a", "libmp3lame",
-                "-q:a", "2",
-                "-y",
-                str(voice_file),
-            ]
+        # 3. 计算声道值
+        pan_values = compute_role_pan_values(unique_roles)
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
-            output_file.unlink(missing_ok=True)
+        # 4. 逐段 TTS 合成
+        audio_files: List[Path] = []
+        for segment, emotion, voice_id in segments_with_voices:
+            temp_file = output_file.parent / f"_temp_{len(audio_files)}_{output_file.stem}.mp3"
+            request = TTSRequest(
+                text=segment.text,
+                output_file=temp_file,
+                voice_config=VoiceConfig(
+                    voice_id=voice_id,
+                    speed=1.0,
+                    volume=1.0,
+                    pitch=0,
+                    emotion=emotion or "neutral",
+                ),
+            )
+            result = self.engine.synthesize(request)
+            if not result.success:
+                return EngineResult.failure(f"TTS 合成失败: {result.error_message}")
+            audio_files.append(result.file_path)
 
-            duration = self.audio_processor._get_duration(voice_file)
+        # 5. FFmpeg 混音
+        if len(audio_files) == 1 and not bgm_file:
+            # 单段无 BGM：直接重命名
+            audio_files[0].rename(output_file)
             return EngineResult.success(
-                file_path=voice_file,
-                duration=duration,
-                engine_name="ffmpeg",
+                file_path=output_file,
+                duration=0.0,
+                engine_name=_get_engine_name(self.engine),
             )
 
-        except subprocess.CalledProcessError as e:
-            logger.error(f"BGM 混音失败: {e.stderr}")
-            # 恢复语音文件
-            output_file.rename(voice_file)
-            return EngineResult.failure(f"BGM 混音失败: {e.stderr}")
-        except Exception as e:
-            logger.error(f"混音异常: {e}")
-            try:
-                output_file.rename(voice_file)
-            except Exception:
-                pass
-            return EngineResult.failure(f"混音异常: {e}")
+        # 多段混音或有 BGM
+        pan_list = [pan_values.get(seg.voice_id, 0.0) for seg, _, _ in segments_with_voices]
+        merge_result = self.audio_processor.merge_audio_files(
+            audio_files=audio_files,
+            output_file=output_file,
+            pan_list=pan_list,
+            bgm_file=bgm_file,
+            sample_rate=sample_rate,
+        )
+
+        # 6. 清理临时文件（保留输出文件）
+        for f in audio_files:
+            if f.exists() and f != output_file:
+                f.unlink(missing_ok=True)
+
+        return merge_result

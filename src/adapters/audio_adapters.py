@@ -42,14 +42,22 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
         return self._executor
 
     def merge_audio_files(
-        self, audio_files: List[Path], output_file: Path
+        self,
+        audio_files: List[Path],
+        output_file: Path,
+        pan_list: Optional[List[float]] = None,
+        bgm_file: Optional[Path] = None,
+        sample_rate: int = 32000,
     ) -> EngineResult:
         """
-        合并多个音频文件
+        合并多个音频文件（支持立体声定位和 BGM 混音）
 
         Args:
             audio_files: 音频文件列表
             output_file: 输出文件路径
+            pan_list: 每段的声道值（-1.0=左, 0.0=中, 1.0=右）
+            bgm_file: 背景音乐文件路径
+            sample_rate: 采样率
 
         Returns:
             EngineResult: 处理结果
@@ -58,9 +66,13 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
             return EngineResult.failure("音频文件列表为空")
 
         try:
-            # 单文件直接复制
-            if len(audio_files) == 1:
-                output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.parent.mkdir(parents=True, exist_ok=True)
+
+            has_pan = pan_list and len(pan_list) == len(audio_files)
+            has_bgm = bgm_file is not None and bgm_file.exists()
+
+            # ---- 单文件或无特效：直接复制 ----
+            if len(audio_files) == 1 and not has_pan and not has_bgm:
                 output_file.write_bytes(audio_files[0].read_bytes())
                 return EngineResult.success(
                     file_path=output_file,
@@ -68,39 +80,69 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
                     engine_name="ffmpeg",
                 )
 
-            # 多文件合并
-            output_file.parent.mkdir(parents=True, exist_ok=True)
+            # ---- 构建 filter_complex ----
+            filter_parts: List[str] = []
+            concat_inputs = ""
 
-            # 创建文件列表
-            list_file = output_file.parent / "filelist.txt"
-            with open(list_file, "w") as f:
-                for audio_file in audio_files:
-                    f.write(f"file '{audio_file.absolute()}'\n")
+            for i, audio_file in enumerate(audio_files):
+                pan_val = pan_list[i] if has_pan else 0.0
+                # stereo pan: distribute mono input across L/R
+                # pan=stereo|c0=<gain_left>|c1=<gain_right>
+                gain_l = max(0.0, (1.0 - pan_val) / 2)
+                gain_r = max(0.0, (1.0 + pan_val) / 2)
+                filter_parts.append(
+                    f"[{i}:a]pan=stereo|c0={gain_l:.3f}*c0|c1={gain_r:.3f}*c0[a{i}]"
+                )
+                concat_inputs += f"[a{i}]"
 
-            # FFmpeg 命令
+            if len(audio_files) > 1:
+                filter_parts.append(f"{concat_inputs}concat=n={len(audio_files)}:v=0:a=1[out]")
+
+            if has_bgm:
+                # Mix dialogue output with BGM at 60% volume
+                if filter_parts:
+                    last_filter = filter_parts[-1]
+                    last_label = f"[out]"
+                    # Replace concat output to include BGM
+                    filter_parts[-1] = (
+                        f"{concat_inputs}concat=n={len(audio_files)}:v=0:a=1[pre];"
+                        f"[pre]volume=1.0[pre];"
+                        f"[{len(audio_files)}:a]volume=0.4[bgm];"
+                        f"[pre][bgm]amix=inputs=2:duration=first[out]"
+                    )
+                else:
+                    filter_parts.append(
+                        f"[0:a]volume=1.0[pre];"
+                        f"[{len(audio_files)}:a]volume=0.4[bgm];"
+                        f"[pre][bgm]amix=inputs=2:duration=first[out]"
+                    )
+
+            filter_complex = ";".join(filter_parts)
+            all_inputs = [str(f) for f in audio_files]
+            if has_bgm:
+                all_inputs.append(str(bgm_file))
+
             cmd = [
                 "ffmpeg",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                str(list_file),
-                "-c",
-                "copy",
                 "-y",
+                *sum([["-i", p] for p in all_inputs], []),
+                "-filter_complex",
+                filter_complex,
+                "-map",
+                "[out]",
+                "-ar",
+                str(sample_rate),
+                "-ac",
+                "2",
+                "-q:a",
+                "2",
                 str(output_file),
             ]
 
-            # 执行命令（带超时）
             result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True, timeout=60
+                cmd, capture_output=True, text=True, check=True, timeout=120
             )
 
-            # 清理临时文件
-            list_file.unlink(missing_ok=True)
-
-            # 返回结果
             duration = self._get_duration(output_file)
             return EngineResult.success(
                 file_path=output_file, duration=duration, engine_name="ffmpeg"

@@ -22,6 +22,10 @@ class TTSEngineInterface(Protocol):
         """合成语音"""
         ...
 
+    def get_engine_name(self) -> str:
+        """获取引擎名称"""
+        ...
+
 
 @dataclass
 class SynthesizeSpeechUseCase:
@@ -192,7 +196,12 @@ class AudioProcessorInterface(Protocol):
     """音频处理器接口"""
 
     def merge_audio_files(
-        self, audio_files: List[Path], output_file: Path
+        self,
+        audio_files: List[Path],
+        output_file: Path,
+        pan_list: Optional[List[float]] = None,
+        bgm_file: Optional[Path] = None,
+        sample_rate: int = 32000,
     ) -> EngineResult:
-        """合并音频文件"""
+        """合并音频文件（支持立体声定位和 BGM 混音）"""
         ...
