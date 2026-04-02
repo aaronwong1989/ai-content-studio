@@ -276,23 +276,126 @@ rm -rf ~/.claude/skills/ai-content-studio.legacy_*
 
 ## 8. 依赖
 
-Skill 安装完成后，需要确保运行时依赖已就绪：
+Skill 安装完成后，Agent 需要确保以下运行时依赖已就绪。
 
-### 8.1 系统依赖
+### 8.1 Python 环境（Agent 自动检测）
+
+AI Agent 应在执行任务前自动检测 Python 环境，缺失时引导用户安装：
+
+```bash
+# 检测 Python 是否存在
+if ! command -v python3 &>/dev/null; then
+    echo "[ai-content-studio] Python 3 未安装，AI Content Studio 功能将不可用。"
+    echo "安装命令："
+    echo "  macOS:     brew install python"
+    echo "  Linux:     sudo apt install python3 python3-pip"
+    echo "  Windows:   访问 https://python.org 下载安装包"
+fi
+
+# 检测 pip 是否可用
+if ! python3 -m pip --version &>/dev/null; then
+    echo "[ai-content-studio] pip 未安装，Python 包将无法安装。"
+    echo "  macOS:     brew install python（pip 自动包含）"
+    echo "  Linux:     sudo apt install python3-pip"
+fi
+
+# 显示版本（用于诊断）
+python3 --version 2>/dev/null || echo "[ai-content-studio] Python: 未安装"
+python3 -m pip --version 2>/dev/null || echo "[ai-content-studio] pip: 未安装"
+```
+
+**自动安装脚本**（适用于全新环境）：
+```bash
+# macOS
+if ! command -v python3 &>/dev/null; then
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    brew install python
+fi
+
+# Linux (Debian/Ubuntu)
+if ! command -v python3 &>/dev/null; then
+    sudo apt update && sudo apt install -y python3 python3-pip python3-venv
+fi
+```
+
+### 8.2 系统依赖
 
 | 依赖 | 说明 | 安装命令 |
 |------|------|---------|
 | **ffmpeg** | 音频处理引擎（必需） | `brew install ffmpeg` (macOS) / `sudo apt install ffmpeg` (Linux) |
 
-OpenClaw 可通过 metadata 自动检测缺失依赖。
-
-### 8.2 Python 依赖
-
+**Agent 自动检测与安装引导**：
 ```bash
-pip install -r requirements.txt
+# 检测 ffmpeg
+if ! command -v ffmpeg &>/dev/null; then
+    echo "ffmpeg 未安装，音频处理将不可用！"
+    echo "安装命令："
+    echo "  macOS:  brew install ffmpeg"
+    echo "  Linux:  sudo apt install ffmpeg"
+    echo "  Docker: apt-get install ffmpeg"
+    # 继续执行（仅 TTS 合成受影响，脚本仍可运行）
+fi
+
+# 显示版本（验证安装成功）
+ffmpeg -version | head -n1
 ```
 
-### 8.3 API Key 配置
+### 8.3 Python 依赖
+
+安装 Python 包：
+
+```bash
+# 定位 requirements.txt（安装后位于主路径，源码时位于当前目录）
+SKILL_DIR="${HOME}/.agents/skills/ai-content-studio"
+REQUIREMENTS_FILE="${SKILL_DIR}/requirements.txt"
+[[ ! -f "$REQUIREMENTS_FILE" ]] && REQUIREMENTS_FILE="$(pwd)/requirements.txt"
+
+# 方式 1：使用 requirements.txt（推荐）
+python3 -m pip install -r "$REQUIREMENTS_FILE"
+
+# 方式 2：单独安装各依赖
+python3 -m pip install requests tenacity rich cachetools
+
+# 方式 3：使用虚拟环境（隔离环境，推荐生产环境使用）
+python3 -m venv "${SKILL_DIR}/.venv"
+source "${SKILL_DIR}/.venv/bin/activate"   # Linux/macOS
+# .venv\Scripts\activate                    # Windows
+python3 -m pip install -r "$REQUIREMENTS_FILE"
+```
+
+**Agent 批量安装参考**：
+```bash
+# 安装 Python 后自动装包
+SKILL_DIR="${HOME}/.agents/skills/ai-content-studio"
+for pkg in requests tenacity rich cachetools; do
+    python3 -m pip install "$pkg" 2>/dev/null || true
+done
+```
+
+**依赖说明**：
+
+| 包 | 版本 | 用途 |
+|-----|------|------|
+| `requests` | >=2.31.0 | HTTP 请求（调用 TTS API） |
+| `tenacity` | >=8.0.0 | 重试逻辑（API 调用的容错） |
+| `rich` | >=13.0.0 | 进度条和富文本输出 |
+| `cachetools` | >=5.0.0 | 结果缓存（避免重复请求） |
+
+### 8.4 语音处理库（进阶）
+
+以下库为可选，用于增强本地音频处理能力：
+
+```bash
+# 可选：音频处理增强
+python3 -m pip install pydub audioop-libs  # 音频切片和转换
+
+# 可选：波形可视化
+python3 -m pip install matplotlib numpy  # 音频波形绘图
+```
+
+> **注意**：核心 TTS 功能依赖云端 API（DashScope/MiniMax），本地库为辅助工具，非必需。
+
+### 8.5 API Key 配置
 
 从 `~/.config/opencode/opencode.json` 自动读取：
 - `provider.bailian` → Qwen（DASHSCOPE_API_KEY）
@@ -302,6 +405,17 @@ pip install -r requirements.txt
 ```bash
 export DASHSCOPE_API_KEY="your-dashscope-key"
 export MINIMAX_API_KEY="your-minimax-key"
+```
+
+**Agent 自动配置引导**：
+```bash
+# 检查 API Key 是否已配置
+if [[ -z "$DASHSCOPE_API_KEY" ]] && [[ -z "$MINIMAX_API_KEY" ]]; then
+    echo "[ai-content-studio] 警告：未检测到 API Key 环境变量"
+    echo "TTS 功能需要至少一个 API Key，请设置："
+    echo "  export DASHSCOPE_API_KEY='your-key'   # Qwen / 阿里云百炼 TTS"
+    echo "  export MINIMAX_API_KEY='your-key'     # MiniMax TTS"
+fi
 ```
 
 ---
@@ -358,6 +472,7 @@ bash scripts/install.sh  # 自动备份旧版本
 ```
 ~/.agents/skills/ai-content-studio/
 ├── SKILL.md                 # Skill 主入口（含 OpenClaw metadata）
+├── requirements.txt          # Python 依赖清单
 ├── scripts/
 │   ├── install.sh           # 多 Agent 安装脚本
 │   └── studio/              # TTS 引擎源码
