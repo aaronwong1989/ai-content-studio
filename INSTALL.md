@@ -142,6 +142,7 @@ mkdir -p "$SKILL_DEST"
 
 # 复制核心文件
 cp "${SKILL_SOURCE}/SKILL.md" "${SKILL_DEST}/"
+cp "${SKILL_SOURCE}/requirements.txt" "${SKILL_DEST}/"
 cp -r "${SKILL_SOURCE}/scripts/" "${SKILL_DEST}/"
 cp -r "${SKILL_SOURCE}/references/" "${SKILL_DEST}/"
 cp -r "${SKILL_SOURCE}/tests/" "${SKILL_DEST}/"
@@ -398,8 +399,8 @@ python3 -m pip install matplotlib numpy  # 音频波形绘图
 ### 8.5 API Key 配置
 
 从 `~/.config/opencode/opencode.json` 自动读取：
-- `provider.bailian` → Qwen（DASHSCOPE_API_KEY）
-- `provider.minimax` → MiniMax（MINIMAX_API_KEY）
+- `provider.bailian.options.apiKey` → Qwen（DASHSCOPE_API_KEY）
+- `provider.minimax.options.apiKey` → MiniMax（MINIMAX_API_KEY）
 
 也可通过环境变量覆盖：
 ```bash

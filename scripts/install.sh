@@ -18,10 +18,11 @@
 #   ~/.openclaw/skills/ai-content-studio     OpenClaw 兼容（符号链接）
 #
 # Skill Bundle 结构：
-#   SKILL.md        ← 主入口（含 OpenClaw metadata）
-#   scripts/        ← 安装脚本、TTS 引擎源码
-#   references/     ← 参考文档（配置文件、故障排查）
-#   tests/          ← 测试脚本
+#   SKILL.md           ← 主入口（含 OpenClaw metadata）
+#   requirements.txt   ← Python 依赖清单
+#   scripts/           ← 安装脚本、TTS 引擎源码
+#   references/        ← 参考文档（配置文件、故障排查）
+#   tests/             ← 测试脚本
 #────────────────────────────────────────────────────────────────────────────
 
 set -euo pipefail
@@ -228,6 +229,7 @@ install_skill() {
     # 复制 skill bundle
     echo "  → 复制 skill bundle..."
     cp "${REPO_ROOT}/SKILL.md" "${SKILL_DEST}/SKILL.md"
+    cp "${REPO_ROOT}/requirements.txt" "${SKILL_DEST}/requirements.txt"
 
     for subdir in scripts references tests; do
         if [[ -d "${REPO_ROOT}/${subdir}" ]]; then
@@ -272,6 +274,18 @@ install_skill() {
     [[ -L "$LINK_CLAUDE" ]] && echo "    Claude Code: $(readlink "$LINK_CLAUDE")"
     [[ -L "$LINK_OPENCODE" ]] && echo "    OpenCode: $(readlink "$LINK_OPENCODE")"
     [[ -L "$LINK_OPENCLAW" ]] && echo "    OpenClaw: $(readlink "$LINK_OPENCLAW")"
+    # 自动安装 Python 依赖
+    if [[ -f "${SKILL_DEST}/requirements.txt" ]]; then
+        echo "  → 安装 Python 依赖..."
+        # 尝试静默安装，失败则提示
+        if ! python3 -m pip install -r "${SKILL_DEST}/requirements.txt" &>/dev/null; then
+            echo "  ! 警告：无法自动安装 Python 依赖。请手动执行："
+            echo "    python3 -m pip install -r \"${SKILL_DEST}/requirements.txt\""
+        else
+            echo "  ✓ Python 依赖安装完成。"
+        fi
+    fi
+
     echo ""
     echo "✓ 安装完成！重启 Agent 会话即可使用此 skill。"
 }

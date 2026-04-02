@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2] - 2026-04-02
+
+### Added
+- **安装自动化增强**: `scripts/install.sh` 脚本现在会自动安装 Python 依赖。
+- **Skill Bundle 结构补全**: 在安装包中补齐了 `requirements.txt`，确保 Agent 环境依赖完整。
+- **文档校准**: 更新 `INSTALL.md` 中的 API 配置说明，使其与 `opencode.json` 的实际 JSON 路径一致。
+
 ## [1.0.1] - 2026-04-02
 
 ### Added
