@@ -49,7 +49,7 @@ AI Content Studio 可以把**文字内容**变成**专业播客音频**。
 
 ```bash
 cd ai-content-studio
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 第二步：安装 FFmpeg
@@ -112,7 +112,7 @@ export DASHSCOPE_API_KEY="your-dashscope-key"
 ### 验证配置
 
 ```bash
-python studio_orchestrator.py --check
+ai-studio studio --topic "测试" -o /tmp/test.mp3
 ```
 
 看到类似输出即为配置成功：
@@ -130,7 +130,7 @@ python studio_orchestrator.py --check
 ### 最简命令
 
 ```bash
-python studio_orchestrator.py --source "你的内容.txt" -o my_podcast.mp3
+ai-studio studio --topic "你的内容.txt" -o my_podcast.mp3
 ```
 
 工具会自动：
@@ -142,13 +142,13 @@ python studio_orchestrator.py --source "你的内容.txt" -o my_podcast.mp3
 ### 命令结构解析
 
 ```bash
-python studio_orchestrator.py \
-  --source "源文本.txt"      \   # 要转换的内容（必填）
-  --mode deep_dive          \   # 生成模式（默认 deep_dive）
+ai-studio studio \
+  --topic "播客主题"        \   # 播客主题（必填）
   -o output.mp3             \   # 输出文件名
-  --stereo                  \   # 开启立体声（可选）
-  --bgm music.mp3           \   # 添加背景音乐（可选）
-  --roles configs/studio_roles.json  # 指定角色音色（可选）
+  --llm qwen               \   # LLM 引擎（默认 minimax）
+  --tts minimax             \   # TTS 引擎（默认 minimax）
+  --roles configs/roles.json \  # 角色音色配置（可选）
+  --bgm music.mp3           \   # 背景音乐（可选）
 ```
 
 ### 支持的输入格式
@@ -174,12 +174,7 @@ python studio_orchestrator.py \
 适合将长文章转化为有深度讨论感的音频节目。
 
 ```bash
-python studio_orchestrator.py \
-  --source "技术文章.txt" \
-  --mode deep_dive \
-  --stereo \
-  --bgm ambient.mp3 \
-  -o "深度播客.mp3"
+ai-studio studio --topic "技术文章" -o "深度播客.mp3"
 ```
 
 **效果**：两个角色围绕主题展开讨论，有提问、有反驳、有总结，模拟真实播客节奏。
@@ -193,10 +188,7 @@ python studio_orchestrator.py \
 适合将报告、新闻、公告快速转化为可听的简报。
 
 ```bash
-python studio_orchestrator.py \
-  --source "周报.txt" \
-  --mode summary \
-  -o "周报摘要.mp3"
+ai-studio studio --topic "周报内容" -o "周报摘要.mp3"
 ```
 
 **效果**：单一专业主播音色，语速适中，清晰播报核心内容。类似新闻广播风格。
@@ -210,11 +202,7 @@ python studio_orchestrator.py \
 模拟专家视角，对产品/事件进行评价，有赞有弹。
 
 ```bash
-python studio_orchestrator.py \
-  --source "产品评测.txt" \
-  --mode review \
-  --stereo \
-  -o "产品评论.mp3"
+ai-studio studio --topic "产品评测内容" -o "产品评论.mp3"
 ```
 
 **效果**：专家角色会分析优点和不足，观点平衡，适合帮助听众全面了解事物。
@@ -226,11 +214,7 @@ python studio_orchestrator.py \
 适合将争议性话题做成正反方对辩节目。
 
 ```bash
-python studio_orchestrator.py \
-  --source "AI是否会取代人类工作.txt" \
-  --mode debate \
-  --stereo \
-  -o "辩论节目.mp3"
+ai-studio studio --topic "AI是否会取代人类工作" -o "辩论节目.mp3"
 ```
 
 **效果**：正方和反方各自陈述观点，主持人引导节奏，最终给出综合结论。模拟辩论赛结构。
@@ -288,10 +272,7 @@ python studio_orchestrator.py \
 使用自定义角色库：
 
 ```bash
-python studio_orchestrator.py \
-  --source "内容.txt" \
-  --roles my_roles.json \
-  -o "定制播客.mp3"
+ai-studio studio --topic "内容" --roles my_roles.json -o "定制播客.mp3"
 ```
 
 **注意**：角色名需要与脚本中的标签匹配。脚本会生成类似 `[主播小王, happy]:` 的标签，确保 JSON 中的键名一致。
@@ -392,11 +373,7 @@ python studio_orchestrator.py \
 运行合成：
 
 ```bash
-python minimax_tts_tool.py \
-  -s dialogue.txt \
-  -r configs/studio_roles.json \
-  --stereo \
-  -o "对话音频.mp3"
+ai-studio dialogue --source dialogue.txt -o "对话音频.mp3"
 ```
 
 ---
@@ -420,7 +397,7 @@ python minimax_tts_tool.py \
 
 ```bash
 # 强制使用 Qwen（最便宜，有免费额度）
-python studio_orchestrator.py --source "内容.txt" --engine qwen
+ai-studio dialogue --source "内容" --engine qwen_tts -o out.mp3
 ```
 
 ### Q：生成时间很长怎么办？
@@ -454,21 +431,18 @@ python studio_orchestrator.py --source "内容.txt" --engine qwen
 ## 快速命令速查
 
 ```bash
-# 深度播客（推荐）
-python studio_orchestrator.py --source "内容.txt" --stereo -o out.mp3
+# AI 播客（最常用）
+ai-studio studio --topic "内容" -o out.mp3
 
-# 快速摘要
-python studio_orchestrator.py --source "内容.txt" --mode summary -o summary.mp3
-
-# 辩论节目
-python studio_orchestrator.py --source "内容.txt" --mode debate --stereo -o debate.mp3
+# 对话脚本 TTS
+ai-studio dialogue --source dialogue.txt -o dialogue.mp3
 
 # 加背景音乐
-python studio_orchestrator.py --source "内容.txt" --bgm music.mp3 -o with_bgm.mp3
+ai-studio studio --topic "内容" --bgm music.mp3 -o with_bgm.mp3
 
 # 自定义角色
-python studio_orchestrator.py --source "内容.txt" --roles my_roles.json -o custom.mp3
+ai-studio studio --topic "内容" --roles my_roles.json -o custom.mp3
 
-# 检查状态
-python studio_orchestrator.py --check
+# 批量合成
+ai-studio batch --segments "开头|cherry,正文|ethan" -o episode.mp3
 ```

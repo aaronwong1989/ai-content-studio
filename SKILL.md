@@ -217,6 +217,17 @@ export DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 ---
 
+## 参考文档
+
+| 文档 | 用途 |
+|------|------|
+| `references/user_manual.md` | 面向终端用户的完整场景引导（安装、四大场景、FAQ） |
+| `references/configs_guide.md` | 角色库配置详解（36+ 音色、自定义角色、高级参数） |
+| `references/troubleshooting.md` | 故障排查（错误码、API 问题、FFmpeg） |
+| `references/configs/` | 预置角色库 JSON 文件 |
+
+---
+
 ## 安装与维护
 
 ```bash
