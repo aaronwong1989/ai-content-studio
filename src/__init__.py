@@ -8,7 +8,7 @@ __version__ = "1.1.0"
 __author__ = "AI Content Studio Team"
 
 # 导出核心 API
-from src.core.enums import (
+from .core.enums import (
     LanguageCode,
     EmotionType,
     MiniMaxVoiceID,
@@ -17,7 +17,7 @@ from src.core.enums import (
     TTSEngineType,
 )
 
-from src.core.tts_config import TTSConfig, TTSPresets
+from .core.tts_config import TTSConfig, TTSPresets
 
 __all__ = [
     # Enums

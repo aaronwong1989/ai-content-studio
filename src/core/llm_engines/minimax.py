@@ -5,7 +5,7 @@ from typing import Optional, Iterator, Dict, Any
 import logging
 
 from .base import BaseLLMEngine
-from src.services.api_client import MiniMaxClient
+from ...services.api_client import MiniMaxClient
 
 logger = logging.getLogger(__name__)
 
