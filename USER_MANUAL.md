@@ -73,6 +73,9 @@ AI Content Studio 需要两个 AI 服务账号（都是国内服务，支付宝/
 1. 访问 [MiniMax 开放平台](https://platform.minimax.io)
 2. 注册账号并充值（播客生成成本很低，10 元够用很久）
 3. 在控制台获取 API Key
+   
+   > [!TIP]
+   > **复用建议**：如果你正在使用 OpenCode 或类似的“编码套餐”/ Token Plan，MiniMax T2A V2 方案通常可以直接复用该套餐额度（只需在 `opencode.json` 中配置即可）。
 
 #### 阿里云百炼 Qwen（备用引擎）
 

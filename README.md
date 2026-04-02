@@ -248,9 +248,7 @@ ai-content-studio/
 │   └── qwen_voices.json        # Qwen TTS 角色库（24 角色 + 29 音色）
 │
 ├── outputs/                     # 产出目录（自动创建）
-├── work/                        # 临时音频片段（自动清理）
-├── work_qwen/                   # Qwen Omni 临时文件（自动清理）
-├── work_tts/                    # Qwen TTS 临时文件（自动清理）
+├── work/                        # 临时音频片段及缓存（自动清理非持久文件）
 │
 └── tests/
     ├── test_minimax_tts.py      # MiniMax 集成测试

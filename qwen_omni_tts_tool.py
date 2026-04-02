@@ -164,13 +164,13 @@ def text_to_speech_qwen(text, output_file=None, voice="cherry", model="qwen3-omn
 
 
 def merge_audio_files(file_list, output_file, pan_list=None, bgm_file=None):
-    """qwen 混音：委托 audio_utils，参数为 24kHz / work_qwen / 基于输出文件格式"""
+    """qwen 混音：委托 audio_utils，参数为 24kHz / work / 基于输出文件格式制作"""
     from pathlib import Path as _Path
     console.print(f"[cyan]→ 混音引擎启动，处理 {len(file_list)} 个音频片段...[/cyan]")
     suffix = _Path(output_file).suffix.lower()
     ok = audio_utils.merge_audio_files(
         file_list, output_file, pan_list=pan_list, bgm_file=bgm_file,
-        sample_rate=24000, work_dir_name="work_qwen", output_suffix=suffix
+        sample_rate=24000, work_dir_name="work", output_suffix=suffix
     )
     if ok:
         stats["total_duration"] = get_duration(output_file)
@@ -183,7 +183,7 @@ def process_segments(segments, output_file, roles, use_stereo=False,
     if not segments:
         return False
 
-    work_dir = Path(__file__).parent / "work_qwen"
+    work_dir = Path(__file__).parent / "work"
     work_dir.mkdir(exist_ok=True)
 
     temp_files = []

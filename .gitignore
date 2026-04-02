@@ -60,11 +60,11 @@ Thumbs.db
 *.swp
 *.swo
 .claude/settings.local.json
+.claude/skills/
 
 # --- AI Content Studio Specific ---
 # Cache for TTS fragments
 work/
-work_*/
 
 # Audio outputs
 outputs/

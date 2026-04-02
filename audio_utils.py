@@ -241,7 +241,7 @@ def merge_audio_files(file_list, output_file, pan_list=None, bgm_file=None,
         pan_list: 声道平衡列表
         bgm_file: 背景音乐文件路径
         sample_rate: 采样率 (minimax=32000, qwen=24000)
-        work_dir_name: 工作目录名 (minimax="work", qwen="work_qwen")
+        work_dir_name: 工作目录名 (默认为 "work"，三引擎整合)
         output_suffix: 输出格式后缀 (.mp3 或 .wav)
     """
     if not file_list:

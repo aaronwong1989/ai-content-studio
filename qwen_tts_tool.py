@@ -189,13 +189,13 @@ def text_to_speech(text, output_file=None, voice="Aurora", speed=1.0,
 
 
 def merge_audio_files(file_list, output_file, pan_list=None, bgm_file=None):
-    """qwen 混音：委托 audio_utils，参数为 16kHz / work_tts / 基于输出格式"""
+    """qwen 混音：委托 audio_utils，参数为 16kHz / work / 基于输出格式制作"""
     from pathlib import Path as _Path
     console.print(f"[cyan]→ 混音引擎启动，处理 {len(file_list)} 个音频片段...[/cyan]")
     suffix = _Path(output_file).suffix.lower()
     ok = audio_utils.merge_audio_files(
         file_list, output_file, pan_list=pan_list, bgm_file=bgm_file,
-        sample_rate=16000, work_dir_name="work_tts", output_suffix=suffix
+        sample_rate=16000, work_dir_name="work", output_suffix=suffix
     )
     if ok:
         stats["total_duration"] = get_duration(output_file)
@@ -216,7 +216,7 @@ def process_segments(segments, output_file, roles, use_stereo=False,
     voice_pool = voice_cfg.get("voice_pool", ["cherry", "ethan", "chelsie"])
     role_defaults = voice_cfg.get("role_defaults", {})
 
-    work_dir = Path(__file__).parent / "work_tts"
+    work_dir = Path(__file__).parent / "work"
     work_dir.mkdir(exist_ok=True)
 
     temp_files = []
