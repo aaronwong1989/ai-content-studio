@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any, Union
 
 from .base import BaseTTSEngine
 from services.sse_parser import parse_sse_audio_stream
-from scripts.studio.audio_utils import make_wav_header
+from services.audio_utils import make_wav_header
 from core.enums import QwenVoiceID, AudioFormat
 
 logger = logging.getLogger(__name__)
