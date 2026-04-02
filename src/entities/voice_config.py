@@ -31,7 +31,7 @@ class VoiceConfig:
         'male-qn-qingse'
     """
 
-    voice_id: str
+    voice_id: str = "male-qn-qingse"  # 默认音色
     speed: float = 1.0
     volume: float = 1.0
     pitch: int = 0
