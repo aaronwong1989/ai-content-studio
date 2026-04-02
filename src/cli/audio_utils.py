@@ -8,22 +8,7 @@ import re as _re
 import json as _json
 import struct as _struct
 from pathlib import Path
-
-
-def get_duration(file_path):
-    """获取音频文件时长 (秒)"""
-    abs_path = str(Path(file_path).resolve())
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        abs_path
-    ]
-    try:
-        output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL).decode().strip()
-        return float(output)
-    except Exception:
-        return 0.0
+from ..services.audio_utils import make_wav_header, get_duration
 
 
 def run_ffmpeg(cmd_list, log_file):
@@ -195,33 +180,6 @@ def stream_qwen_omni_events(resp):
         if not choices:
             continue
         yield choices[0].get("delta", {})
-
-
-def make_wav_header(num_samples, sample_rate=24000, num_channels=1, bits_per_sample=16):
-    """
-    为原始 PCM 数据构造标准 WAV header (RIFF fmt + data chunks)
-    用于 qwen3-omni-flash 返回的裸 PCM 数据
-    """
-    byte_rate = sample_rate * num_channels * bits_per_sample // 8
-    block_align = num_channels * bits_per_sample // 8
-    data_size = num_samples * block_align
-    header = _struct.pack(
-        "<4sI4s4sIHHIIHH4sI",
-        b"RIFF",
-        36 + data_size,
-        b"WAVE",
-        b"fmt ",
-        16,           # fmt chunk size
-        1,             # audio format: PCM
-        num_channels,
-        sample_rate,
-        byte_rate,
-        block_align,
-        bits_per_sample,
-        b"data",
-        data_size,
-    )
-    return header
 
 
 # ── 共享混音引擎 ────────────────────────────────────────────
