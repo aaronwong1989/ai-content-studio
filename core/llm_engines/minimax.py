@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class MiniMaxLLMEngine(BaseLLMEngine):
     """MiniMax LLM 引擎"""
 
-    DEFAULT_MODEL = "M2-preview-1004"
+    DEFAULT_MODEL = "MiniMax-M2.7-highspeed"
 
     def __init__(
         self,

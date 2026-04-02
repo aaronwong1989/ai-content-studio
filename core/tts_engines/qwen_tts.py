@@ -10,6 +10,7 @@ import requests
 from typing import Optional, List, Dict, Any
 
 from .base import BaseTTSEngine
+from services.sse_parser import parse_sse_stream
 
 logger = logging.getLogger(__name__)
 
@@ -184,32 +185,22 @@ class QwenTTSEngine(BaseTTSEngine):
                 logger.error(f"API 请求失败 ({resp.status_code}): {resp.text[:200]}")
                 resp.raise_for_status()
 
-            # 解析 SSE 响应
-            audio_base64_chunks = []
-            for line in resp.iter_lines():
-                if not line or not line.startswith(b"data:"):
-                    continue
+            # 使用统一的 SSE 解析器提取音频数据
+            audio_chunks = []
+            for chunk in parse_sse_stream(resp):
+                audio_obj = chunk.get("output", {}).get("audio", {})
+                audio_data = audio_obj.get("data")
+                if audio_data:
+                    audio_chunks.append(audio_data)
 
-                chunk_str = line.decode("utf-8")[5:].strip()
-                if not chunk_str:
-                    continue
-
-                try:
-                    chunk = json.loads(chunk_str)
-                    audio_obj = chunk.get("output", {}).get("audio", {})
-                    audio_data = audio_obj.get("data")
-                    if audio_data:
-                        audio_base64_chunks.append(audio_data)
-                except json.JSONDecodeError:
-                    continue
-
-            if not audio_base64_chunks:
+            if not audio_chunks:
                 logger.error("响应中未包含音频数据")
                 return None
 
-            # 合并所有音频分片
-            full_b64 = "".join(audio_base64_chunks)
-            audio_bytes = base64.b64decode(full_b64)
+            # 分块解码后拼接字节（避免字符串拼接的 O(n²) 复杂度）
+            audio_bytes = b"".join(
+                base64.b64decode(chunk) for chunk in audio_chunks
+            )
 
             logger.info(f"合成成功 ({len(audio_bytes):,} bytes, {len(text)} chars)")
             return audio_bytes

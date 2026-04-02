@@ -4,12 +4,14 @@ Qwen Omni TTS 引擎实现 (qwen3-omni-flash)
 关键：Qwen-Omni 必须使用 stream=True 才能返回音频数据
 """
 import base64
+import json
 import logging
 import requests
 from typing import Optional, List, Dict, Any
 
 from .base import BaseTTSEngine
-from services.audio_processor import AudioProcessor
+from services.sse_parser import parse_sse_audio_stream
+from scripts.studio.audio_utils import make_wav_header
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,6 @@ class QwenOmniTTSEngine(BaseTTSEngine):
         super().__init__(api_key, base_url, **kwargs)
         self.model = model or self.DEFAULT_MODEL
         self.default_voice = default_voice or self.DEFAULT_VOICE
-        self.audio_processor = AudioProcessor()
 
     def synthesize(
         self,
@@ -144,10 +145,7 @@ class QwenOmniTTSEngine(BaseTTSEngine):
         }
 
         try:
-            audio_chunks = []
-            response_text = ""
-
-            # 流式读取 SSE 响应
+            # 流式读取 SSE 响应（使用统一的 SSE 解析器）
             with requests.post(
                 f"{self.base_url}/chat/completions",
                 headers=headers,
@@ -159,43 +157,35 @@ class QwenOmniTTSEngine(BaseTTSEngine):
                     logger.error(f"API 请求失败 ({resp.status_code}): {resp.text[:200]}")
                     resp.raise_for_status()
 
-                # 解析 SSE 事件
-                for line in resp.iter_lines():
-                    if not line or not line.startswith(b"data:"):
-                        continue
-
-                    data_str = line.decode("utf-8")[5:].strip()
-                    if data_str == "[DONE]":
-                        break
-
-                    import json
-                    try:
-                        chunk = json.loads(data_str)
-                        choices = chunk.get("choices", [])
-                        if not choices:
-                            continue
-
-                        delta = choices[0].get("delta", {})
-                        if delta.get("content"):
-                            response_text += delta["content"]
-
-                        audio_obj = delta.get("audio")
-                        if audio_obj and isinstance(audio_obj, dict) and audio_obj.get("data"):
-                            audio_chunks.append(audio_obj["data"])
-
-                    except json.JSONDecodeError:
-                        continue
+                # 使用统一的 SSE 解析器
+                audio_chunks, response_text = parse_sse_audio_stream(
+                    resp,
+                    get_audio_data=lambda chunk: (
+                        chunk.get("choices", [{}])[0]
+                        .get("delta", {})
+                        .get("audio", {})
+                        .get("data")
+                    ),
+                    get_text_content=lambda chunk: (
+                        chunk.get("choices", [{}])[0]
+                        .get("delta", {})
+                        .get("content")
+                    )
+                )
 
             if not audio_chunks:
                 logger.error(f"响应中未包含音频数据。文本回复: {response_text[:200]}")
                 return None
 
-            # 合并所有音频分片
-            full_b64 = "".join(audio_chunks)
-            pcm_data = base64.b64decode(full_b64)
+            # 分块解码后拼接字节（避免字符串拼接的 O(n²) 复杂度）
+            audio_bytes_list = [
+                base64.b64decode(chunk) for chunk in audio_chunks
+            ]
+            pcm_data = b"".join(audio_bytes_list)
 
-            # Qwen-Omni 流式返回裸 PCM 数据，需要手动构造 WAV header
-            audio_bytes = self._make_wav_header(len(pcm_data) // 2) + pcm_data
+            # 使用现有的 make_wav_header 函数
+            num_samples = len(pcm_data) // 2
+            audio_bytes = make_wav_header(num_samples, self.SAMPLE_RATE) + pcm_data
 
             logger.info(f"合成成功 ({len(audio_bytes):,} bytes, {len(response_text)} chars)")
             if response_text:
@@ -206,35 +196,6 @@ class QwenOmniTTSEngine(BaseTTSEngine):
         except Exception as e:
             logger.error(f"Qwen Omni TTS 调用失败: {e}")
             return None
-
-    def _make_wav_header(self, num_samples: int) -> bytes:
-        """为原始 PCM 数据构造标准 WAV header"""
-        import struct
-
-        sample_rate = self.SAMPLE_RATE
-        num_channels = 1
-        bits_per_sample = 16
-        byte_rate = sample_rate * num_channels * bits_per_sample // 8
-        block_align = num_channels * bits_per_sample // 8
-        data_size = num_samples * block_align
-
-        header = struct.pack(
-            "<4sI4s4sIHHIIHH4sI",
-            b"RIFF",
-            36 + data_size,
-            b"WAVE",
-            b"fmt ",
-            16,           # fmt chunk size
-            1,            # audio format: PCM
-            num_channels,
-            sample_rate,
-            byte_rate,
-            block_align,
-            bits_per_sample,
-            b"data",
-            data_size,
-        )
-        return header
 
     def is_available(self) -> bool:
         """检查引擎是否可用"""

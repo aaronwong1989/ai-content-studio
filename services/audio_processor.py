@@ -46,10 +46,6 @@ class AudioProcessor:
         Returns:
             输出文件路径，失败返回 None
         """
-        if not os.path.exists(input_file):
-            logger.error(f"输入文件不存在: {input_file}")
-            return None
-
         output_path = output_file or input_file
         temp_output = str(self.work_dir / f"normalized_{Path(input_file).name}")
 
@@ -95,6 +91,9 @@ class AudioProcessor:
 
         except subprocess.CalledProcessError as e:
             logger.error(f"FFmpeg 处理失败: {e}")
+            return None
+        except FileNotFoundError:
+            logger.error(f"输入文件不存在: {input_file}")
             return None
         except Exception as e:
             logger.error(f"音量标准化失败: {e}")
