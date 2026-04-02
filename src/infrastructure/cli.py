@@ -6,7 +6,7 @@ import logging
 import sys
 from pathlib import Path
 
-from ..entities import TTSEngineType, EmotionType, AudioFormat
+from ..entities import TTSEngineType, EmotionType, AudioFormat, MiniMaxVoiceID
 from ..infrastructure.container import Container
 
 
@@ -44,8 +44,8 @@ def main():
 
     parser.add_argument(
         "--voice",
-        default="male-qn-qingse",
-        help="音色 ID（默认: male-qn-qingse）",
+        default=MiniMaxVoiceID.MALE_QN_QINGSE.value,
+        help=f"音色 ID（默认: {MiniMaxVoiceID.MALE_QN_QINGSE.value}）",
     )
 
     parser.add_argument(

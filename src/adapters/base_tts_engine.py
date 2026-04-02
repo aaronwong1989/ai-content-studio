@@ -129,9 +129,13 @@ class BaseTTSEngine(ABC):
 
         try:
             if method.upper() == "POST":
-                response = self.session.post(url, json=payload, headers=headers)
+                response = self.session.post(
+                    url, json=payload, headers=headers, timeout=30
+                )
             elif method.upper() == "GET":
-                response = self.session.get(url, params=payload, headers=headers)
+                response = self.session.get(
+                    url, params=payload, headers=headers, timeout=30
+                )
             else:
                 raise ValueError(f"不支持的 HTTP 方法: {method}")
 

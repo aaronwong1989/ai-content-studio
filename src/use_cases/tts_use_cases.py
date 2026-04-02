@@ -1,9 +1,9 @@
 """
 TTS 用例
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Protocol
+from typing import List, Optional, Protocol, Union
 
 from ..entities import (
     TTSRequest,
@@ -11,6 +11,7 @@ from ..entities import (
     AudioSegment,
     VoiceConfig,
     TTSEngineType,
+    EmotionType,
 )
 
 
@@ -49,11 +50,12 @@ class SynthesizeSpeechUseCase:
         self,
         text: str,
         output_file: Path,
-        voice_id: str = "male-qn-qingse",
+        voice_config: VoiceConfig = None,
+        voice_id: str = None,
         speed: float = 1.0,
         volume: float = 1.0,
         pitch: int = 0,
-        emotion: str = "neutral",
+        emotion: Union[str, EmotionType] = "neutral",
         language: str = "auto",
         audio_format: str = "mp3",
     ) -> EngineResult:
@@ -63,7 +65,8 @@ class SynthesizeSpeechUseCase:
         Args:
             text: 待合成文本
             output_file: 输出文件路径
-            voice_id: 音色 ID
+            voice_config: 音色配置（优先使用）
+            voice_id: 音色 ID（voice_config 为 None 时使用）
             speed: 语速
             volume: 音量
             pitch: 音调
@@ -74,9 +77,9 @@ class SynthesizeSpeechUseCase:
         Returns:
             EngineResult: 合成结果
         """
-        # 1. 构建实体
-        voice_config = VoiceConfig(
-            voice_id=voice_id,
+        # 构建音色配置（支持传入 VoiceConfig 或单个参数）
+        config = voice_config or VoiceConfig(
+            voice_id=voice_id or "male-qn-qingse",
             speed=speed,
             volume=volume,
             pitch=pitch,
@@ -86,12 +89,12 @@ class SynthesizeSpeechUseCase:
         request = TTSRequest(
             text=text,
             output_file=output_file,
-            voice_config=voice_config,
+            voice_config=config,
             language=language,
             format=audio_format,
         )
 
-        # 2. 调用引擎
+        # 调用引擎
         return self.engine.synthesize(request)
 
 

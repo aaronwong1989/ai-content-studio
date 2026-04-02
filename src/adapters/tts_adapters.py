@@ -220,7 +220,7 @@ class QwenOmniTTSEngine(BaseTTSEngine, TTSEngineInterface):
         添加 WAV 文件头
 
         Args:
-            raw_audio: 原始音频数据
+            raw_audio: 原始音频数据（PCM 格式）
 
         Returns:
             bytes: 带 WAV 头的音频数据
@@ -228,7 +228,10 @@ class QwenOmniTTSEngine(BaseTTSEngine, TTSEngineInterface):
         # 从 services.audio_utils 导入（已修复循环依赖）
         from services.audio_utils import make_wav_header
 
-        return make_wav_header(raw_audio)
+        # 16-bit audio: 2 bytes per sample
+        num_samples = len(raw_audio) // 2
+        wav_header = make_wav_header(num_samples=num_samples, sample_rate=24000)
+        return wav_header + raw_audio
 
     def _estimate_duration(self, audio_data: bytes) -> float:
         """

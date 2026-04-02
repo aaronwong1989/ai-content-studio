@@ -3,6 +3,8 @@
 提供跨模块的音频处理函数
 """
 import struct
+import subprocess
+from pathlib import Path
 
 
 def make_wav_header(
@@ -60,3 +62,31 @@ def make_wav_header(
     )
 
     return header
+
+
+def get_duration(audio_file: Path) -> float:
+    """
+    使用 ffprobe 获取音频时长
+
+    Args:
+        audio_file: 音频文件路径
+
+    Returns:
+        float: 时长（秒）
+
+    Raises:
+        Exception: ffprobe 执行失败时
+    """
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(audio_file),
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return float(result.stdout.strip())

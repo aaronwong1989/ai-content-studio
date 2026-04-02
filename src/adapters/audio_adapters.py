@@ -1,7 +1,7 @@
 """
 音频处理器适配器
 """
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional
 import subprocess
@@ -92,9 +92,9 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
                 str(output_file),
             ]
 
-            # 执行命令
+            # 执行命令（带超时）
             result = subprocess.run(
-                cmd, capture_output=True, text=True, check=True
+                cmd, capture_output=True, text=True, check=True, timeout=60
             )
 
             # 清理临时文件
@@ -144,7 +144,7 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
                 str(output_file),
             ]
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
 
             duration = self._get_duration(output_file)
             return EngineResult.success(
@@ -183,7 +183,7 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
                 str(output_file),
             ]
 
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=60)
 
             duration = self._get_duration(output_file)
             return EngineResult.success(
@@ -197,7 +197,7 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
 
     def _get_duration(self, audio_file: Path) -> float:
         """
-        获取音频时长
+        获取音频时长（使用共享工具，带回退估算）
 
         Args:
             audio_file: 音频文件
@@ -206,27 +206,20 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
             float: 时长（秒）
         """
         try:
-            cmd = [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(audio_file),
-            ]
-
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            return float(result.stdout.strip())
-
+            # 延迟导入避免循环依赖
+            from services.audio_utils import get_duration
+            return get_duration(audio_file)
         except Exception:
             # 估算时长（假设 128kbps MP3）
             file_size = audio_file.stat().st_size
             bitrate = 128 * 1024 / 8
             return file_size / bitrate
 
-    def batch_process(self, tasks: List[dict]) -> List[EngineResult]:
+    def batch_process(
+        self,
+        tasks: List[dict],
+        timeout: Optional[float] = 300.0,
+    ) -> List[EngineResult]:
         """
         批量并行处理音频任务
 
@@ -234,6 +227,7 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
             tasks: 任务列表，每个任务是一个字典，包含:
                    - method: 方法名（merge, convert, adjust_volume）
                    - args: 参数字典
+            timeout: 单个任务超时时间（秒），默认 300
 
         Returns:
             List[EngineResult]: 结果列表
@@ -245,25 +239,36 @@ class FFmpegAudioProcessor(AudioProcessorInterface):
             args = task.get("args", {})
 
             if method == "merge":
-                future = self.executor.submit(
-                    self.merge_audio_files, **args
-                )
+                future = self.executor.submit(self.merge_audio_files, **args)
             elif method == "convert":
-                future = self.executor.submit(
-                    self.convert_format, **args
-                )
+                future = self.executor.submit(self.convert_format, **args)
             elif method == "adjust_volume":
-                future = self.executor.submit(
-                    self.adjust_volume, **args
-                )
+                future = self.executor.submit(self.adjust_volume, **args)
             else:
                 logger.warning(f"未知方法: {method}")
+                # 添加失败结果代替 future
+                futures.append(None)
                 continue
 
             futures.append(future)
 
-        # 等待所有任务完成
-        results = [future.result() for future in futures]
+        # 等待所有任务完成，收集结果
+        results: List[EngineResult] = []
+        for future in futures:
+            if future is None:
+                results.append(EngineResult.failure(f"未知方法: {method}"))
+                continue
+
+            try:
+                result = future.result(timeout=timeout)
+                results.append(result)
+            except TimeoutError:
+                logger.error(f"任务超时: {timeout}秒")
+                results.append(EngineResult.failure(f"任务执行超时: {timeout}秒"))
+            except Exception as e:
+                logger.error(f"任务执行异常: {str(e)}")
+                results.append(EngineResult.failure(f"任务执行异常: {str(e)}"))
+
         return results
 
     def cleanup(self):
