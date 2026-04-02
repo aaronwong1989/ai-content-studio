@@ -328,6 +328,59 @@ class QwenClient(BaseAPIClient):
             logger.error(f"Qwen 文本生成失败: {e}")
             return None
 
+    def generate_text_stream(
+        self,
+        prompt: str,
+        model: str = "qwen-turbo",
+        temperature: float = 0.7,
+        max_tokens: int = 2000,
+        **kwargs
+    ) -> Iterator[str]:
+        """
+        Qwen 文本生成（流式）
+
+        Yields: 文本片段
+        """
+        url = f"{self.base_url}/chat/completions"
+
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+
+        try:
+            response = self.session.post(
+                url,
+                headers=self._get_headers(),
+                json=payload,
+                stream=True,
+                timeout=60
+            )
+
+            for line in response.iter_lines():
+                if not line or not line.startswith(b"data:"):
+                    continue
+
+                data_str = line.decode("utf-8")[5:].strip()
+                if data_str == "[DONE]":
+                    break
+
+                import json
+                chunk = json.loads(data_str)
+                choices = chunk.get("choices", [])
+                if choices:
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        yield content
+
+        except Exception as e:
+            logger.error(f"Qwen 流式生成失败: {e}")
+            raise
+
     def text_to_speech(
         self,
         text: str,
