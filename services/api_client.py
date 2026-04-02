@@ -5,11 +5,16 @@
 import os
 import time
 import logging
+import atexit
+import weakref
 import requests
 from typing import Optional, Dict, Any, Iterator
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 logger = logging.getLogger(__name__)
+
+# 全局资源跟踪（用于 atexit 清理）
+_active_clients = weakref.WeakSet()
 
 
 class APIClientError(Exception):
@@ -28,17 +33,54 @@ class APIResponseError(APIClientError):
 
 
 class BaseAPIClient:
-    """API 客户端基类"""
+    """
+    API 客户端基类
+
+    支持：
+    - 上下文管理器（with 语句）
+    - 自动资源清理（atexit）
+    - 重试机制（tenacity）
+    """
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         self.api_key = api_key
         self.base_url = base_url
         self.session = requests.Session()
+        self._session_closed = False  # 追踪 session 状态
         self.stats = {
             "requests": 0,
             "errors": 0,
             "retries": 0
         }
+
+        # 注册到全局清理列表
+        _active_clients.add(self)
+
+    def __enter__(self):
+        """上下文管理器入口"""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器退出，自动清理资源"""
+        self.close()
+        return False  # 不抑制异常
+
+    def close(self):
+        """
+        关闭 session，释放资源
+
+        Note:
+            - 建议使用 with 语句自动管理
+            - 长期运行的进程应显式调用 close()
+            - atexit 会在进程退出时自动调用
+        """
+        if not self._session_closed and hasattr(self, 'session'):
+            try:
+                self.session.close()
+                self._session_closed = True
+                logger.debug(f"{self.__class__.__name__} session 已关闭")
+            except Exception as e:
+                logger.warning(f"关闭 session 失败: {e}")
 
     def _get_headers(self) -> Dict[str, str]:
         """获取请求头"""
@@ -404,3 +446,24 @@ def create_minimax_client(api_key: Optional[str] = None, base_url: Optional[str]
 def create_qwen_client(api_key: Optional[str] = None, base_url: Optional[str] = None) -> QwenClient:
     """创建 Qwen 客户端"""
     return QwenClient(api_key, base_url)
+
+
+# === 资源清理 ===
+
+def _cleanup_all_clients():
+    """清理所有活跃的客户端（atexit 回调）"""
+    closed_count = 0
+    for client in list(_active_clients):
+        try:
+            if hasattr(client, '_session_closed') and not client._session_closed:
+                client.close()
+                closed_count += 1
+        except Exception as e:
+            logger.debug(f"清理客户端时出错: {e}")
+
+    if closed_count > 0:
+        logger.debug(f"atexit 清理了 {closed_count} 个客户端 session")
+
+
+# 注册退出清理函数
+atexit.register(_cleanup_all_clients)

@@ -7,10 +7,11 @@ import base64
 import json
 import logging
 import requests
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 
 from .base import BaseTTSEngine
 from services.sse_parser import parse_sse_stream
+from core.enums import QwenVoiceID, LanguageCode
 
 logger = logging.getLogger(__name__)
 
@@ -19,33 +20,19 @@ class QwenTTSEngine(BaseTTSEngine):
     """Qwen TTS 引擎（专用 TTS API）"""
 
     DEFAULT_MODEL = "qwen3-tts-flash"
-    DEFAULT_VOICE = "Aurora"
+    DEFAULT_VOICE = QwenVoiceID.AURORA
     SAMPLE_RATE = 16000
 
-    # 音色名称标准化映射（统一转为小写，API 需要小写音色名）
-    VOICE_ALIASES = {
-        v: v.lower() for v in [
-            "Aurora", "Nannuann", "Clara", "Terri", "Harry", "Eric", "Emma",
-            "Ada", "Alice", "Emily", "Hannah", "Cherry", "Vera", "Bella", "Luna",
-            "Lily", "Ruby", "Coco", "Andy", "Amy", "Daisy", "Sophia",
-            "Dylan", "Jada", "Sunny",
-        ]
-    }
-    # 确保小写 key 也能用
-    VOICE_ALIASES.update({
-        v.lower(): v.lower() for v in VOICE_ALIASES.values()
-    })
-
-    # 支持的语言
+    # 支持的语言（从 LanguageCode 枚举推导）
     SUPPORTED_LANGUAGES = [
-        "Auto",  # 自动检测
-        "zh",    # 中文
-        "en",    # 英文
-        "yue",   # 粤语
-        "sh",    # 上海话
-        "sichuan",  # 四川话
-        "tianjin",  # 天津话
-        "wu",    # 吴语
+        LanguageCode.AUTO,       # 自动检测
+        LanguageCode.ZH,         # 中文
+        LanguageCode.EN,         # 英文
+        LanguageCode.YUE,        # 粤语
+        LanguageCode.SHANGHAI,   # 上海话
+        LanguageCode.SICHUAN,    # 四川话
+        LanguageCode.TIANJIN,    # 天津话
+        LanguageCode.WU,         # 吴语
     ]
 
     def __init__(
@@ -53,7 +40,7 @@ class QwenTTSEngine(BaseTTSEngine):
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         model: Optional[str] = None,
-        default_voice: Optional[str] = None,
+        default_voice: Optional[Union[str, QwenVoiceID]] = None,
         **kwargs
     ):
         super().__init__(api_key, base_url, **kwargs)
@@ -71,9 +58,9 @@ class QwenTTSEngine(BaseTTSEngine):
         self,
         text: str,
         output_file: str,
-        voice: Optional[str] = None,
+        voice: Optional[Union[str, QwenVoiceID]] = None,
         speed: float = 1.0,
-        language: str = "Auto",
+        language: Union[str, LanguageCode] = LanguageCode.AUTO,
         **kwargs
     ) -> bool:
         """
@@ -82,19 +69,26 @@ class QwenTTSEngine(BaseTTSEngine):
         Args:
             text: 待合成文本
             output_file: 输出文件路径
-            voice: 音色 ID
+            voice: 音色 ID（字符串或 QwenVoiceID 枚举）
             speed: 语速
-            language: 语言类型（Auto/zh/en/yue/sh/sichuan/tianjin/wu）
+            language: 语言类型（字符串或 LanguageCode 枚举，默认 Auto）
             **kwargs: 其他参数
 
         Returns:
             成功返回 True，失败返回 False
+
+        Note:
+            枚举参数支持字符串输入（向后兼容）：
+            - language="zh" → LanguageCode.ZH
         """
+        # 标准化枚举参数
+        language_normalized = self._normalize_enum(language, LanguageCode)
+
         audio_bytes = self._synthesize_api(
             text=text,
             voice=voice or self.default_voice,
             speed=speed,
-            language=language
+            language=language_normalized
         )
 
         if audio_bytes:
@@ -131,7 +125,7 @@ class QwenTTSEngine(BaseTTSEngine):
     def _synthesize_api(
         self,
         text: str,
-        voice: str,
+        voice: Union[str, QwenVoiceID],
         speed: float = 1.0,
         language: str = "Auto"
     ) -> Optional[bytes]:
@@ -140,7 +134,7 @@ class QwenTTSEngine(BaseTTSEngine):
 
         Args:
             text: 待合成文本
-            voice: 音色 ID
+            voice: 音色 ID（字符串或枚举）
             speed: 语速
             language: 语言类型
 
@@ -152,6 +146,7 @@ class QwenTTSEngine(BaseTTSEngine):
             return None
 
         voice_id = self._normalize_voice(voice).lower()
+        language_code = language if language != "Auto" else "Auto"
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -164,7 +159,7 @@ class QwenTTSEngine(BaseTTSEngine):
             "input": {
                 "text": text,
                 "voice": voice_id,
-                "language_type": language if language != "Auto" else "Auto"
+                "language_type": language_code
             }
         }
 
@@ -209,23 +204,53 @@ class QwenTTSEngine(BaseTTSEngine):
             logger.error(f"Qwen TTS 调用失败: {e}")
             return None
 
-    def _normalize_voice(self, voice: str) -> str:
-        """标准化音色名称"""
-        if not voice:
-            return "Aurora"
-        lower = voice.lower()
-        return self.VOICE_ALIASES.get(lower, voice)
+    def _normalize_voice(self, voice: Union[str, QwenVoiceID]) -> str:
+        """
+        标准化音色名称（支持字符串和枚举）
+
+        Args:
+            voice: 音色字符串或枚举
+
+        Returns:
+            音色字符串值
+        """
+        if isinstance(voice, QwenVoiceID):
+            return voice.value
+        elif isinstance(voice, str):
+            return voice
+        return QwenVoiceID.AURORA.value
+
+    def _normalize_enum(self, value: Union[str, Any], enum_class: type) -> str:
+        """
+        标准化枚举参数（支持字符串和枚举）
+
+        Args:
+            value: 字符串或枚举值
+            enum_class: 枚举类
+
+        Returns:
+            枚举值字符串
+        """
+        if isinstance(value, str):
+            try:
+                return enum_class(value).value
+            except ValueError:
+                logger.warning(f"无效的 {enum_class.__name__} 值: {value}，使用原值")
+                return value
+        elif hasattr(value, 'value'):
+            return value.value
+        return value
 
     def is_available(self) -> bool:
         """检查引擎是否可用"""
         return self.api_key is not None
 
     def get_supported_voices(self) -> list:
-        """获取支持的音色列表"""
-        return list(self.VOICE_ALIASES.keys())
+        """获取支持的音色列表（字符串格式）"""
+        return [voice.value for voice in QwenVoiceID]
 
     def get_supported_languages(self) -> list:
-        """获取支持的语言列表"""
+        """获取支持的语言列表（枚举值）"""
         return self.SUPPORTED_LANGUAGES.copy()
 
     def get_info(self) -> Dict[str, Any]:
