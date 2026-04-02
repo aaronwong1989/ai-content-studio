@@ -141,8 +141,8 @@ create_link() {
     # 确保父目录存在
     mkdir -p "$(dirname "$link_path")"
 
-    # 备份已存在的路径
-    if [[ -e "$link_path" || -L "$link_path" ]]; then
+    # 备份已存在的路径（-e 对符号链接返回 true，无需额外 -L）
+    if [[ -e "$link_path" ]]; then
         backup_existing "$link_path" "$desc"
     fi
 
@@ -182,12 +182,14 @@ uninstall_skill() {
         echo "✓ 已卸载主安装"
     fi
 
-    # 清理备份目录
+    # 清理备份目录（nullglob：无匹配时返回空）
+    shopt -s nullglob
     for backup_dir in "${HOME}/.agents/skills/${SKILL_NAME}.backup_"* "${HOME}/.agents/skills/${SKILL_NAME}.legacy_"*; do
         if [[ -d "$backup_dir" ]]; then
             echo "  ℹ 保留备份：${backup_dir}"
         fi
     done
+    shopt -u nullglob
 
     echo ""
     if [[ $links_removed -eq 0 && ! -d "$SKILL_DEST" ]]; then
@@ -219,8 +221,9 @@ install_skill() {
         mv "$SKILL_DEST" "$backup"
     fi
 
-    # 创建主目录
-    mkdir -p "$SKILL_DEST"
+    # 创建主目录（mv 后原路径一定不存在，直接 mkdir）
+    mkdir -p "$(dirname "$SKILL_DEST")"
+    mkdir "$SKILL_DEST"
 
     # 复制 skill bundle
     echo "  → 复制 skill bundle..."
@@ -263,7 +266,7 @@ install_skill() {
     echo "─────────────────────────────────────────────"
     echo "  主路径：${SKILL_DEST}/"
     echo "  Skill 文件："
-    ls -la "${SKILL_DEST}/" | grep -v "^total" | grep -v "^\." | head -10
+    ls -1 "${SKILL_DEST}/" | head -10
     echo ""
     echo "  符号链接："
     [[ -L "$LINK_CLAUDE" ]] && echo "    Claude Code: $(readlink "$LINK_CLAUDE")"
