@@ -10,6 +10,7 @@
 - 可替换性强
 """
 
+from .base_tts_engine import BaseTTSEngine
 from .tts_adapters import (
     MiniMaxTTSEngine,
     QwenOmniTTSEngine,
@@ -17,6 +18,7 @@ from .tts_adapters import (
 from .audio_adapters import FFmpegAudioProcessor
 
 __all__ = [
+    "BaseTTSEngine",
     "MiniMaxTTSEngine",
     "QwenOmniTTSEngine",
     "FFmpegAudioProcessor",

@@ -2,8 +2,8 @@
 TTS 引擎适配器
 """
 from pathlib import Path
-from typing import Optional, Union
-import json
+from typing import Union
+import logging
 
 from ..entities import (
     TTSRequest,
@@ -14,16 +14,20 @@ from ..entities import (
     QwenVoiceID,
 )
 from ..use_cases.tts_use_cases import TTSEngineInterface
+from .base_tts_engine import BaseTTSEngine
 
 
-class MiniMaxTTSEngine(TTSEngineInterface):
+logger = logging.getLogger(__name__)
+
+
+class MiniMaxTTSEngine(BaseTTSEngine, TTSEngineInterface):
     """
     MiniMax TTS 引擎适配器
 
     职责：
     - 实现 TTSEngineInterface
     - 调用 MiniMax API
-    - 处理 SSE 流式响应
+    - 处理 TTS 合成
     """
 
     def __init__(
@@ -40,10 +44,12 @@ class MiniMaxTTSEngine(TTSEngineInterface):
             group_id: 组 ID
             base_url: API 基础 URL
         """
-        self.api_key = api_key
+        super().__init__(api_key, base_url)
         self.group_id = group_id
-        self.base_url = base_url
-        self._client = None  # 延迟初始化
+
+    def get_engine_name(self) -> str:
+        """获取引擎名称"""
+        return "minimax"
 
     def synthesize(self, request: TTSRequest) -> EngineResult:
         """
@@ -59,56 +65,46 @@ class MiniMaxTTSEngine(TTSEngineInterface):
             # 1. 构建请求参数
             payload = self._build_payload(request)
 
-            # 2. 调用 API
-            audio_data = self._call_api(payload)
+            # 2. 调用 API（使用基类方法）
+            audio_data = self._call_api(
+                endpoint="/v1/text_to_speech",
+                payload=payload,
+            )
 
-            # 3. 保存文件
-            request.output_file.parent.mkdir(parents=True, exist_ok=True)
-            request.output_file.write_bytes(audio_data)
+            # 3. 保存文件（使用基类方法）
+            self._save_audio_file(audio_data, request.output_file)
 
             # 4. 返回结果
             duration = self._estimate_duration(audio_data)
             return EngineResult.success(
                 file_path=request.output_file,
                 duration=duration,
-                engine_name="minimax",
+                engine_name=self.get_engine_name(),
             )
 
         except Exception as e:
+            logger.error(f"MiniMax TTS 合成失败: {str(e)}", exc_info=True)
             return EngineResult.failure(
                 error_message=f"MiniMax TTS 合成失败: {str(e)}",
-                engine_name="minimax",
+                engine_name=self.get_engine_name(),
             )
 
     def _build_payload(self, request: TTSRequest) -> dict:
         """构建 API 请求参数"""
-        # 转换音色 ID
-        voice_id = self._normalize_voice_id(request.voice_id)
-
-        # 转换情感
-        emotion = self._normalize_emotion(request.emotion)
-
         return {
             "text": request.text,
-            "voice_id": voice_id,
+            "voice_id": self._normalize_enum_value(request.voice_id),
             "model": "speech-01",
             "speed": request.speed,
             "vol": request.voice_config.volume,
             "pitch": request.voice_config.pitch,
-            "emotion": emotion,
-            "audio_format": self._normalize_format(request.format),
+            "emotion": self._normalize_emotion(request.emotion),
+            "audio_format": self._normalize_enum_value(request.format),
         }
-
-    def _normalize_voice_id(self, voice_id: str) -> str:
-        """标准化音色 ID"""
-        # 如果是枚举值，取 value
-        if isinstance(voice_id, MiniMaxVoiceID):
-            return voice_id.value
-        return voice_id
 
     def _normalize_emotion(self, emotion: Union[str, EmotionType]) -> str:
         """标准化情感参数"""
-        if isinstance(emotion, EmotionType):
+        if hasattr(emotion, "value"):
             # MiniMax 情感映射
             emotion_map = {
                 EmotionType.NEUTRAL: "neutral",
@@ -118,44 +114,25 @@ class MiniMaxTTSEngine(TTSEngineInterface):
                 EmotionType.FEARFUL: "fearful",
             }
             return emotion_map.get(emotion, "neutral")
-        return emotion
-
-    def _normalize_format(self, format: Union[str, AudioFormat]) -> str:
-        """标准化音频格式"""
-        if isinstance(format, AudioFormat):
-            format_map = {
-                AudioFormat.MP3: "mp3",
-                AudioFormat.WAV: "wav",
-                AudioFormat.FLAC: "flac",
-            }
-            return format_map.get(format, "mp3")
-        return format
-
-    def _call_api(self, payload: dict) -> bytes:
-        """调用 MiniMax API"""
-        # 延迟导入避免循环依赖
-        import requests
-
-        url = f"{self.base_url}/v1/text_to_speech"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-
-        return response.content
+        return str(emotion)
 
     def _estimate_duration(self, audio_data: bytes) -> float:
-        """估算音频时长"""
+        """
+        估算音频时长（MP3 格式）
+
+        Args:
+            audio_data: 音频数据
+
+        Returns:
+            float: 时长（秒）
+        """
         # 简单估算：假设 128kbps MP3
         file_size = len(audio_data)
         bitrate = 128 * 1024 / 8  # bytes per second
         return file_size / bitrate
 
 
-class QwenOmniTTSEngine(TTSEngineInterface):
+class QwenOmniTTSEngine(BaseTTSEngine, TTSEngineInterface):
     """
     Qwen Omni TTS 引擎适配器
 
@@ -179,10 +156,12 @@ class QwenOmniTTSEngine(TTSEngineInterface):
             model: 模型名称
             base_url: API 基础 URL
         """
-        self.api_key = api_key
+        super().__init__(api_key, base_url)
         self.model = model
-        self.base_url = base_url
-        self._client = None
+
+    def get_engine_name(self) -> str:
+        """获取引擎名称"""
+        return "qwen"
 
     def synthesize(self, request: TTSRequest) -> EngineResult:
         """
@@ -198,71 +177,69 @@ class QwenOmniTTSEngine(TTSEngineInterface):
             # 1. 构建请求参数
             payload = self._build_payload(request)
 
-            # 2. 调用 API
-            audio_data = self._call_api(payload)
+            # 2. 调用 API（使用基类方法）
+            audio_data = self._call_api(
+                endpoint="/audio/speech",
+                payload=payload,
+            )
 
-            # 3. 保存文件（WAV 格式需要添加头部）
-            request.output_file.parent.mkdir(parents=True, exist_ok=True)
+            # 3. 添加 WAV 头部（如果需要）
             if str(request.format).lower() == "wav":
                 audio_data = self._add_wav_header(audio_data)
-            request.output_file.write_bytes(audio_data)
 
-            # 4. 返回结果
+            # 4. 保存文件（使用基类方法）
+            self._save_audio_file(audio_data, request.output_file)
+
+            # 5. 返回结果
             duration = self._estimate_duration(audio_data)
             return EngineResult.success(
                 file_path=request.output_file,
                 duration=duration,
-                engine_name="qwen",
+                engine_name=self.get_engine_name(),
             )
 
         except Exception as e:
+            logger.error(f"Qwen TTS 合成失败: {str(e)}", exc_info=True)
             return EngineResult.failure(
                 error_message=f"Qwen TTS 合成失败: {str(e)}",
-                engine_name="qwen",
+                engine_name=self.get_engine_name(),
             )
 
     def _build_payload(self, request: TTSRequest) -> dict:
         """构建 API 请求参数"""
-        voice_id = self._normalize_voice_id(request.voice_id)
-
         return {
             "model": self.model,
             "input": request.text,
-            "voice": voice_id,
+            "voice": self._normalize_enum_value(request.voice_id),
             "response_format": "wav",
             "speed": request.speed,
         }
 
-    def _normalize_voice_id(self, voice_id: str) -> str:
-        """标准化音色 ID"""
-        if isinstance(voice_id, QwenVoiceID):
-            return voice_id.value
-        return voice_id
-
-    def _call_api(self, payload: dict) -> bytes:
-        """调用 Qwen API"""
-        import requests
-
-        url = f"{self.base_url}/audio/speech"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
-
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-
-        return response.content
-
     def _add_wav_header(self, raw_audio: bytes) -> bytes:
-        """添加 WAV 文件头"""
+        """
+        添加 WAV 文件头
+
+        Args:
+            raw_audio: 原始音频数据
+
+        Returns:
+            bytes: 带 WAV 头的音频数据
+        """
         # 从 services.audio_utils 导入（已修复循环依赖）
         from services.audio_utils import make_wav_header
 
         return make_wav_header(raw_audio)
 
     def _estimate_duration(self, audio_data: bytes) -> float:
-        """估算音频时长"""
+        """
+        估算音频时长（WAV 格式）
+
+        Args:
+            audio_data: 音频数据
+
+        Returns:
+            float: 时长（秒）
+        """
         # WAV 格式：16-bit, 24000Hz, mono
         sample_rate = 24000
         bytes_per_sample = 2
