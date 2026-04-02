@@ -2,14 +2,8 @@
 name: ai-content-studio
 description: |
   AI Content Studio — 专业级 AI 音频内容创作工具。
-  Use this skill whenever working in or with the ai-content-studio project:
-  generating podcasts/TTS audio, running the orchestrator, fixing TTS bugs,
-  extending engines, adding new voices, configuring role libraries, running
-  tests, or reading the project's architecture. Make sure to invoke this skill
-  for any task involving MiniMax T2A V2, Qwen TTS, Qwen Omni, voice synthesis,
-  role configuration, or the audio studio workflow — even if the user doesn't
-  explicitly name the project.
-  触发词：播客生成、TTS 音频合成、多角色对话、语音合成、辩论播客
+  **当你听到用户说"帮我把 X 做成播客"、"生成一段 TTS 音频"、"把文章转成语音"、"做一个辩论节目"、"写一个播客脚本"时，立即激活本 skill。**
+  触发词：播客生成、TTS 音频合成、多角色对话、语音合成、辩论播客、文本转音频、内容转语音、文章转播客
 
 # OpenClaw 元数据
 metadata:
@@ -31,43 +25,79 @@ metadata:
 
 专业级 AI 音频内容创作工具。三引擎编排（MiniMax → Qwen TTS → Qwen Omni），通过 LLM 编排播客脚本 + 高保真语音合成，生成广播级立体声音频。
 
-## 目录结构
-
-```
-ai-content-studio/               # Skill 源码仓库
-├── SKILL.md                     # 本文件（主入口）
-├── scripts/
-│   ├── install.sh               # Skill 安装脚本
-│   └── studio/                  # TTS 引擎源码
-│       ├── studio_orchestrator.py   # 推荐入口，编排 + Fallback
-│       ├── content_studio.py        # MiniMax LLM 脚本生成
-│       ├── minimax_tts_tool.py      # MiniMax T2A V2 TTS
-│       ├── qwen_tts_studio.py       # Qwen LLM 脚本生成
-│       ├── qwen_tts_tool.py         # Qwen qwen3-tts-flash TTS
-│       ├── qwen_omni_studio.py      # Qwen Omni 全模态单次调用
-│       ├── qwen_omni_tts_tool.py    # Qwen qwen3-omni-flash TTS
-│       ├── audio_utils.py           # 共享工具（FFmpeg 混音、正则解析、VoicePool）
-│       ├── config_utils.py          # 统一配置加载（opencode.json）
-│       └── paths.py                 # 路径配置模块
-├── references/
-│   └── configs/                 # 角色库配置文件
-│       ├── studio_roles.json     # MiniMax 工作角色库（36 角色）
-│       ├── roles.json            # MiniMax 轻量角色库
-│       ├── minimax_voices.json   # MiniMax 音色参考文档
-│       └── qwen_voices.json      # Qwen TTS 角色库
-├── tests/                       # 测试脚本
-└── assets/                      # 运行时产出
-    ├── outputs/                 # 音频输出
-    ├── work/                    # MiniMax 临时文件
-    ├── work_qwen/               # Qwen Omni 临时文件
-    └── work_tts/                # Qwen TTS 临时文件
-```
-
 **Fallback 链路**: `MiniMax → Qwen TTS → Qwen Omni`（全部失败才报错）
 
 ---
 
-## 常用命令
+## 场景化交互引导
+
+当用户请求将文本内容转换为播客音频时，按以下流程引导：
+
+### 步骤 1：确认场景
+
+先问用户想要哪种风格（如果用户已明确说明，可跳过）：
+
+| 用户意图 | 推荐模式 | 说明 |
+|---------|---------|------|
+| "做一个播客/对话" | `--mode deep_dive` | 两人/多人深度对谈，有提问、有反驳 |
+| "快速摘要/播报一下" | `--mode summary` | 单人专业播报，清晰简洁 |
+| "专家评论/点评一下" | `--mode review` | 含优缺点的专家评析 |
+| "辩论/正反方对辩" | `--mode debate` | 正反方对辩，有主持人引导 |
+
+**默认选择**：用户未指定时，使用 `--mode deep_dive`
+
+### 步骤 2：生成命令
+
+根据用户选择的场景生成命令：
+
+```bash
+# 基础命令结构
+cd scripts/studio
+python studio_orchestrator.py \
+  --source "你的内容.txt" \
+  --mode <选择的模式> \
+  -o output.mp3
+```
+
+### 步骤 3：增强选项（可选）
+
+根据需要添加：
+
+| 选项 | 用法 | 示例 |
+|------|------|------|
+| `--stereo` | 立体声（不同角色左右声道） | 几乎所有场景都建议开启 |
+| `--bgm music.mp3` | 添加背景音乐 | 选择轻柔纯音乐，人声时自动降低音量 |
+| `--engine <engine>` | 指定引擎 | `minimax`（推荐）/ `qwen_tts` / `qwen` |
+| `--roles <config>` | 自定义角色音色 | 参考 `references/configs_guide.md` |
+
+### 步骤 4：典型命令示例
+
+```bash
+# 深度播客（最常用）
+python studio_orchestrator.py \
+  --source "文章.txt" \
+  --mode deep_dive \
+  --stereo \
+  --bgm ambient.mp3 \
+  -o "播客.mp3"
+
+# 快速摘要
+python studio_orchestrator.py \
+  --source "报告.txt" \
+  --mode summary \
+  -o "摘要.mp3"
+
+# 辩论节目
+python studio_orchestrator.py \
+  --source "争议话题.txt" \
+  --mode debate \
+  --stereo \
+  -o "辩论.mp3"
+```
+
+---
+
+## 常用命令速查
 
 ### 一句话跑通
 ```bash
@@ -138,16 +168,14 @@ python tests/test_qwen_omni_tts.py
 
 ---
 
-## 配置文件速查
+## 参考文档
 
-| 文件 | 引擎 | 用途 |
-|------|------|------|
-| `references/configs/studio_roles.json` | MiniMax | 推荐工作角色库（36 角色，6 大场景） |
-| `references/configs/roles.json` | MiniMax | 轻量角色库（3 角色，快速测试） |
-| `references/configs/minimax_voices.json` | MiniMax | 音色参考文档 + 参数指南（纯查阅） |
-| `references/configs/qwen_voices.json` | Qwen TTS | Qwen 角色库（24 角色 + 29 音色轮询池） |
-
-详见 `references/configs/README.md`。
+| 文档 | 用途 |
+|------|------|
+| `references/user_manual.md` | **面向终端用户的完整场景引导**（四大场景详解、角色定制、FAQ） |
+| `references/configs_guide.md` | 角色库配置详解（36+ 音色、自定义角色、高级参数） |
+| `references/troubleshooting.md` | 故障排查（错误码、API 问题、FFmpeg） |
+| `references/configs/` | 预置角色库 JSON 文件 |
 
 ---
 
@@ -164,61 +192,6 @@ export MINIMAX_API_KEY="..."
 export MINIMAX_LLM_API_URL="..."   # MiniMax LLM API URL（可选）
 export MINIMAX_TTS_API_URL="..."   # MiniMax TTS API URL（可选）
 ```
-
----
-
-## 关键代码模式
-
-### 路径导入（scripts/studio/ 内部）
-```python
-from paths import REPO_ROOT, OUTPUTS_DIR, WORK_DIR, CONFIGS_DIR
-```
-
-### 共享工具（所有引擎通用）
-```python
-from audio_utils import (
-    parse_dialogue_segments_from_text,  # 正则解析对话文本
-    merge_audio_files,                     # FFmpeg 混音引擎
-    compute_role_pan_values,               # 立体声声道分配
-    VoicePool,                             # 音色轮询分配器
-    split_text,                            # 智能文本切分
-    stream_qwen_omni_events,               # SSE 流解析
-    make_wav_header,                       # PCM WAV header 构造
-)
-```
-
-### SHA256 缓存模式（TTS 片段缓存）
-```python
-import hashlib
-def segment_cache_key(voice, text, params):
-    h = hashlib.sha256()
-    h.update(f"{voice}:{text}:{params}".encode())
-    return h.hexdigest()[:16]
-# 缓存文件命名：seg_<16位hash>.mp3
-```
-
-### MiniMax T2A V2 API 端点
-- LLM: `/v1/messages`（Anthropic 兼容）
-- TTS: `/v1/t2a_v2`
-
-### Qwen API 端点
-- Qwen TTS: `/api/v1/services/aigc/multimodal-generation/generation`
-- Qwen Omni: `/chat/completions`（流式 SSE）
-
----
-
-## 扩展项目
-
-### 新增音色/角色
-1. 在 `references/configs/studio_roles.json`（MiniMax）或 `references/configs/qwen_voices.json`（Qwen TTS）中添加条目
-2. 角色名须与脚本中 `[role]` 标签完全匹配
-3. 运行 `python studio_orchestrator.py --check` 验证
-
-### 新增 TTS 引擎
-1. 在 `studio_orchestrator.py` 中添加 `EnginePriority` 枚举值
-2. 实现对应的 `run_<engine>_studio()` 函数
-3. 在 `check_engines()` 中添加可用性检测
-4. 在 `EnginePriority.AUTO` 的 Fallback 链路中注册
 
 ---
 
