@@ -1,7 +1,7 @@
 ---
 name: ai-content-studio
 description: |
-  AI Content Studio — 专业级 AI 音频内容创作工具。
+  AI Content Studio — 专业级 AI 音频内容创作工具（v1.1.1）。
   **立即激活本 skill**，当用户请求以下任何操作时：
   - 把文字做成播客音频 / 对话节目 / 专家访谈
   - 生成 TTS 语音 / 文本转语音 / 文字转音频
@@ -16,6 +16,8 @@ compatibility:
   env:
     - MINIMAX_API_KEY + MINIMAX_GROUP_ID
     - QWEN_API_KEY (或 DASHSCOPE_API_KEY)
+version: 1.1.1
+last_updated: 2026-04-05
 ---
 
 # AI Content Studio
@@ -179,41 +181,136 @@ ai-studio batch \
 
 **优先级**：环境变量 > `~/.config/opencode/opencode.json`（向后兼容）
 
-```bash
-# MiniMax（需要同时设置两个）
-export MINIMAX_API_KEY="..."
-export MINIMAX_GROUP_ID="..."
+### MiniMax 配置
 
-# Qwen / DashScope（二选一）
-export QWEN_API_KEY="..."
-export DASHSCOPE_API_KEY="..."        # 等效，别名
+```bash
+# 必需：API Key
+export MINIMAX_API_KEY="your-minimax-api-key"
+
+# 可选：Group ID（不设置时使用默认值 "default"）
+export MINIMAX_GROUP_ID="your-group-id"
+```
+
+> **注意**：
+> - `MINIMAX_GROUP_ID` 现在支持默认值，不设置时自动使用 "default"
+> - 某些 Anthropic 兼容代理可能不需要 Group ID
+
+### Qwen / DashScope 配置
+
+```bash
+# 方式 1: 使用 QWEN_API_KEY
+export QWEN_API_KEY="your-qwen-api-key"
+
+# 方式 2: 使用 DASHSCOPE_API_KEY（等效，推荐）
+export DASHSCOPE_API_KEY="your-dashscope-api-key"
 
 # 可选：自定义 Base URL
 export DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
 ```
 
+> **重要**：
+> - **DASHSCOPE_API_KEY** 现已完全支持（TTS 侧和 LLM 侧均支持 fallback）
+> - Qwen TTS 使用 OpenAI 兼容接口（`/chat/completions`），而非 `/audio/speech` 端点
+> - Qwen Omni 必须使用流式 API（stream=True），已自动处理
+
+### 从 opencode.json 读取（向后兼容）
+
 `opencode.json` 结构：
 ```json
 {
   "provider": {
-    "minimax": {"options": {"apiKey": "...", "groupId": "..."}},
-    "bailian": {"options": {"apiKey": "...", "baseURL": "..."}}
+    "minimax": {
+      "options": {
+        "apiKey": "your-minimax-api-key",
+        "groupId": "your-group-id"
+      }
+    },
+    "bailian": {
+      "options": {
+        "apiKey": "your-dashscope-api-key",
+        "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      }
+    }
   }
 }
+```
+
+### 配置验证
+
+```bash
+# 验证环境变量
+echo $MINIMAX_API_KEY
+echo $DASHSCOPE_API_KEY
+
+# 测试 API 连接
+python3 -c "
+import os
+from src.services.api_client import MiniMaxClient
+client = MiniMaxClient(api_key=os.getenv('MINIMAX_API_KEY'))
+result = client.text_to_speech('测试', voice_id='male-qn-qingse')
+print('✓ MiniMax API 连接成功' if result else '✗ MiniMax API 连接失败')
+"
 ```
 
 ---
 
 ## 故障排查
 
+### 常见问题
+
 | 问题 | 解决方案 |
 |------|---------|
 | `ffmpeg: command not found` | `brew install ffmpeg`（macOS）或 `sudo apt install ffmpeg`（Linux）|
+| `ai-studio: command not found` | 运行 `pip install -e . --break-system-packages` 重新安装 CLI |
+| `ModuleNotFoundError: src.xxx` | 重新安装：`pip install -e .` |
 | `ContainerInitializationError` | 检查 API Key 环境变量是否设置 |
-| TTS 返回 1001/1013/1023 | 业务限流，tenacity 自动重试 3 次 |
+| TTS 返回 1001/1013/1021/2056 | **速率限制** - 已自动重试 5 次，指数退避（最大 60 秒）|
+| 音色 ID 不可用 | 运行 `python3 scripts/test_voices.py` 测试音色，更新 roles.json |
 | Qwen Omni 输出含多余文本 | Omni 全模态模型附带非音频元数据，已自动过滤 |
 | 脚本解析失败 | 确保格式为 `[Speaker]: 文本`，方括号要紧邻冒号 |
-| `ModuleNotFoundError: src.xxx` | 重新安装：`pip install -e .` |
+
+### 速率限制处理
+
+当遇到 2056 错误（usage limit exceeded）时：
+- ✅ **自动重试**：最多 5 次
+- ✅ **指数退避**：2秒 → 4秒 → 8秒 → 16秒 → 32秒（最大 60 秒）
+- ✅ **详细日志**：显示重试次数和等待时间
+
+### 音色测试
+
+部分音色 ID 可能不可用，使用测试工具验证：
+
+```bash
+# 测试所有音色
+python3 scripts/test_voices.py
+
+# 输出示例：
+# ✓ 可用音色: male-qn-qingse, female-yujie, presenter_male
+# ✗ 不可用音色: male-qn-K, female-tianmei_v2
+# 建议替换: male-qn-K → presenter_male
+```
+
+### 详细故障排查
+
+查阅 **[完整故障排查指南](docs/TROUBLESHOOTING.md)** 了解：
+- 安装问题（ffmpeg sudo 权限、apt update hook 报错）
+- 运行时问题（CLI 未安装、API Key 缺失、端点 404）
+- 性能优化建议
+- 问题提交流程
+
+---
+
+## 性能优化建议
+
+### 速率限制处理
+- **自动重试**：遇到速率限制（1001/1013/1021/2056）时自动重试最多 5 次
+- **指数退避**：每次重试等待时间翻倍（最大 60 秒）
+- **建议**：批量合成时建议每段之间间隔 0.5-1 秒，避免触发速率限制
+
+### 批量处理建议
+- **并发控制**：批量合成时建议限制并发数（3-5 个并发）
+- **内存优化**：大批量音频处理时建议分批进行，避免内存溢出
+- **缓存策略**：重复文本可考虑缓存已合成的音频片段
 
 ---
 
