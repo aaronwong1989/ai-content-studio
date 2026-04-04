@@ -50,6 +50,7 @@ INSTALL_MARKER="${SKILL_DEST}/.installed_from_ai_content_studio_repo"
 #────────────────────────────────────────────────────────────────────────────
 UNINSTALL=false
 TARGET_AGENT="all"
+CLEANUP_BACKUPS=false
 
 show_help() {
     cat << 'EOF'
@@ -65,6 +66,7 @@ OPTIONS:
                              claude-code  仅 Claude Code
                              opencode     仅 OpenCode
                              openclaw     仅 OpenClaw
+  --cleanup-backups        清理所有备份文件（在 /tmp 中）
   --help                   显示此帮助
 
 安装路径：
@@ -72,6 +74,10 @@ OPTIONS:
   ~/.claude/skills/ai-content-studio          Claude Code 符号链接
   ~/.config/opencode/skills/ai-content-studio OpenCode 符号链接
   ~/.openclaw/skills/ai-content-studio        OpenClaw 符号链接
+
+备份位置：
+  /tmp/ai-content-studio-backups/             所有备份文件
+  （自动清理 7 天前的备份）
 
 安装后可用：
   ai-studio synthesize ...   # 单段 TTS
@@ -83,6 +89,7 @@ OPTIONS:
   bash scripts/install.sh                      # 安装到所有 Agent
   bash scripts/install.sh --agent claude-code # 仅安装到 Claude Code
   bash scripts/install.sh --uninstall          # 卸载所有 Agent 的安装
+  bash scripts/install.sh --cleanup-backups    # 清理所有备份文件
 EOF
 }
 
@@ -103,6 +110,9 @@ while [[ $# -gt 0 ]]; do
             esac
             shift
             ;;
+        --cleanup-backups)
+            CLEANUP_BACKUPS=true
+            ;;
         --help)
             show_help
             exit 0
@@ -120,7 +130,63 @@ done
 # 工具函数
 #────────────────────────────────────────────────────────────────────────────
 
-# 备份已有文件/目录
+# 备份到 /tmp 目录（避免污染 skills 目录）
+backup_to_tmp() {
+    local source_path="$1"
+    local backup_type="${2:-generic}"  # 类型：link, dir, file, main_install, legacy_link
+    local timestamp
+    timestamp=$(date +%Y%m%d_%H%M%S)
+
+    # 创建备份目录
+    local backup_base="/tmp/ai-content-studio-backups"
+    mkdir -p "$backup_base"
+
+    # 生成备份文件名（包含类型、原路径哈希、时间戳）
+    local path_hash
+    path_hash=$(echo "$source_path" | cksum | cut -d' ' -f1)
+    local backup_name="backup_${backup_type}_${path_hash}_${timestamp}"
+
+    local backup_path="${backup_base}/${backup_name}"
+
+    # 备份到 /tmp
+    if [[ -d "$source_path" ]]; then
+        # 目录：打包压缩
+        tar -czf "${backup_path}.tar.gz" -C "$(dirname "$source_path")" "$(basename "$source_path")" 2>/dev/null
+        echo "  ! 备份目录到：${backup_path}.tar.gz"
+        # 删除原目录
+        rm -rf "$source_path"
+    elif [[ -f "$source_path" ]] || [[ -L "$source_path" ]]; then
+        # 文件或符号链接：直接移动
+        mv "$source_path" "$backup_path"
+        echo "  ! 备份到：${backup_path}"
+    fi
+
+    # 自动清理 7 天前的备份
+    find "$backup_base" -name "backup_*" -mtime +7 -type f -delete 2>/dev/null || true
+}
+
+# 清理所有备份
+cleanup_all_backups() {
+    local backup_base="/tmp/ai-content-studio-backups"
+
+    if [[ -d "$backup_base" ]]; then
+        local backup_count
+        backup_count=$(ls -1 "$backup_base" 2>/dev/null | wc -l | tr -d ' ')
+
+        if [[ "$backup_count" -gt 0 ]]; then
+            echo "→ 清理备份目录：${backup_base}"
+            echo "  找到 ${backup_count} 个备份文件"
+            rm -rf "$backup_base"
+            echo "✓ 备份已清理"
+        else
+            echo "✓ 无备份文件需要清理"
+        fi
+    else
+        echo "✓ 备份目录不存在"
+    fi
+}
+
+# 备份已有文件/目录（使用 /tmp）
 backup_existing() {
     local path="$1"
     local desc="${2:-已存在的路径}"
@@ -130,16 +196,15 @@ backup_existing() {
         local link_target
         link_target="$(readlink "$path")"
         echo "  ! 备份已有符号链接 ${path} → ${link_target}"
-        mv "$path" "${path}.backup_$(date +%Y%m%d_%H%M%S)"
+        backup_to_tmp "$path" "link"
     elif [[ -d "$path" ]]; then
-        # 实体目录（非符号链接）：可能是旧版安装，备份后替换
+        # 实体目录（非符号链接）：打包备份
         echo "  ! 检测到旧安装（实体目录）：${path}"
-        echo "    备份到：${path}.legacy_$(date +%Y%m%d_%H%M%S)"
-        mv "$path" "${path}.legacy_$(date +%Y%m%d_%H%M%S)"
+        backup_to_tmp "$path" "dir"
     elif [[ -f "$path" ]]; then
         # 普通文件：备份
         echo "  ! 备份已有文件：${path}"
-        mv "$path" "${path}.backup_$(date +%Y%m%d_%H%M%S)"
+        backup_to_tmp "$path" "file"
     fi
 }
 
@@ -180,27 +245,30 @@ uninstall_skill() {
         elif [[ -e "$link_path" ]]; then
             # 非符号链接的实体（可能是旧安装残留）
             echo "  ! 检测到实体路径（非符号链接）：${link_path}"
-            echo "    移动到备份目录..."
-            mv "$link_path" "${link_path}.legacy_$(date +%Y%m%d_%H%M%S)"
+            backup_to_tmp "$link_path" "legacy_link"
             ((links_removed++)) || true
         fi
     done
 
-    # 删除主安装
+    # 备份并删除主安装
     if [[ -d "$SKILL_DEST" ]]; then
-        echo "  → 删除主安装：${SKILL_DEST}"
-        rm -rf "$SKILL_DEST"
-        echo "✓ 已卸载主安装"
+        echo "  → 备份主安装：${SKILL_DEST}"
+        backup_to_tmp "$SKILL_DEST" "main_install"
+        echo "✓ 主安装已备份到 /tmp"
     fi
 
-    # 清理备份目录（nullglob：无匹配时返回空）
-    shopt -s nullglob
-    for backup_dir in "${HOME}/.agents/skills/${SKILL_NAME}.backup_"* "${HOME}/.agents/skills/${SKILL_NAME}.legacy_"*; do
-        if [[ -d "$backup_dir" ]]; then
-            echo "  ℹ 保留备份：${backup_dir}"
+    # 显示备份信息
+    local backup_base="/tmp/ai-content-studio-backups"
+    if [[ -d "$backup_base" ]]; then
+        local backup_count
+        backup_count=$(ls -1 "$backup_base" 2>/dev/null | wc -l | tr -d ' ')
+        if [[ "$backup_count" -gt 0 ]]; then
+            echo ""
+            echo "  ℹ 备份位置：${backup_base}/"
+            echo "  ℹ 备份文件：${backup_count} 个"
+            echo "  ℹ 清理命令：rm -rf ${backup_base}"
         fi
-    done
-    shopt -u nullglob
+    fi
 
     echo ""
     if [[ $links_removed -eq 0 && ! -d "$SKILL_DEST" ]]; then
@@ -278,12 +346,11 @@ install_skill() {
 
     # 备份主安装（如果存在）
     if [[ -d "$SKILL_DEST" ]]; then
-        local backup="${HOME}/.agents/skills/${SKILL_NAME}.backup_$(date +%Y%m%d_%H%M%S)"
-        echo "  ! 已存在主安装，备份到：${backup}"
-        mv "$SKILL_DEST" "$backup"
+        echo "  ! 已存在主安装，备份到 /tmp..."
+        backup_to_tmp "$SKILL_DEST" "main_install"
     fi
 
-    # 创建主目录（mv 后原路径一定不存在，直接 mkdir）
+    # 创建主目录
     mkdir -p "$(dirname "$SKILL_DEST")"
     mkdir "$SKILL_DEST"
 
@@ -396,7 +463,9 @@ install_skill() {
 #────────────────────────────────────────────────────────────────────────────
 # 入口
 #────────────────────────────────────────────────────────────────────────────
-if [[ "$UNINSTALL" == "true" ]]; then
+if [[ "$CLEANUP_BACKUPS" == "true" ]]; then
+    cleanup_all_backups
+elif [[ "$UNINSTALL" == "true" ]]; then
     uninstall_skill
 else
     install_skill
