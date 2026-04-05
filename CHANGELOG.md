@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.1.1] - 2026-04-05
+
+### Changed
+- **备份机制优化**: 将备份目录从 skills 目录迁移到 `/tmp/ai-content-studio-backups/`，避免污染 skills 目录。
+- **自动备份清理**: 备份文件保留 7 天后自动清理，减少磁盘占用。
+- **安装脚本增强**: 添加 `--cleanup-backups` 选项，支持手动清理所有备份文件。
+
+### Fixed
+- **遗留备份清理**: 自动清理旧版本安装在 skills 目录中的遗留备份文件。
+
+## [1.1.0] - 2026-04-05
+
+### Added
+- **故障排查文档**: 新增 `docs/TROUBLESHOOTING.md`，详细记录安装和运行时问题的解决方案。
+- **音色测试工具**: 新增 `scripts/test_voices.py`，用于测试和验证 TTS 音色可用性。
+- **性能优化指南**: 在 SKILL.md 中添加速率限制处理和批量处理建议章节。
+
+### Changed
+- **依赖注入优化**: 重构 QwenTTSEngineAdapter 的初始化方式，改用延迟加载模式。
+- **文档结构优化**: 将故障排查内容从 SKILL.md 整合到独立文档，提升可维护性。
+
+### Fixed
+- **CLI 命令注册**: 修复 `ai-studio` 命令在 pip install 后无法找到的问题。
+- **Python 依赖安装**: 添加镜像回退机制，解决国内镜像 403 错误。
+- **系统包保护绕过**: 自动添加 `--break-system-packages` 标志，解决 macOS Python 3.14+ 的安装限制。
+
 ## [1.0.2] - 2026-04-02
 
 ### Added

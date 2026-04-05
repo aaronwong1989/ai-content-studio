@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Dict
 import os
 
-from ..adapters.tts_adapters import MiniMaxTTSEngine, QwenOmniTTSEngine
+from ..adapters.tts_adapters import MiniMaxTTSEngine, QwenOmniTTSEngine, QwenTTSEngineAdapter
 from ..adapters.audio_adapters import FFmpegAudioProcessor
 from ..adapters.llm_adapters import MiniMaxLLMEngine, QwenLLMEngine, BaseLLMEngine
 from ..use_cases.tts_use_cases import SynthesizeSpeechUseCase, BatchSynthesizeUseCase
@@ -32,6 +32,8 @@ class Container:
     # TTS 引擎
     minimax_engine: Optional[MiniMaxTTSEngine] = None
     qwen_engine: Optional[QwenOmniTTSEngine] = None
+    # 懒加载专用 TTS 引擎
+    _qwen_tts_engine_instance: Optional[QwenTTSEngineAdapter] = None
 
     # LLM 引擎
     minimax_llm_engine: Optional[MiniMaxLLMEngine] = None
@@ -81,6 +83,7 @@ class Container:
             container.qwen_engine = QwenOmniTTSEngine(
                 api_key=qwen_api_key,
             )
+            # 专用 TTS 引擎（qwen3-tts-flash）使用懒加载，见 _get_engine()
 
         # MiniMax LLM 配置（复用 minimax_api_key）
         if minimax_api_key:
@@ -186,10 +189,13 @@ class Container:
                 raise ValueError("Qwen 引擎未配置，请设置 QWEN_API_KEY")
             return self.qwen_engine
         elif engine_type == "qwen_tts":
-            # 需要 QwenTTSEngine - 暂不支持，返回 qwen_engine 作为 fallback
-            if self.qwen_engine is None:
-                raise ValueError("Qwen TTS 引擎未配置，请设置 QWEN_API_KEY")
-            return self.qwen_engine
+            # 专用 TTS 引擎（qwen3-tts-flash）- 懒加载
+            if self._qwen_tts_engine_instance is None:
+                qwen_api_key = os.getenv("QWEN_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+                if not qwen_api_key:
+                    raise ValueError("Qwen TTS 引擎未配置，请设置 QWEN_API_KEY 或 DASHSCOPE_API_KEY")
+                self._qwen_tts_engine_instance = QwenTTSEngineAdapter(api_key=qwen_api_key)
+            return self._qwen_tts_engine_instance
         else:
             raise ValueError(f"不支持的引擎类型: {engine_type}")
 

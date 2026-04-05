@@ -22,7 +22,7 @@
 #   pyproject.toml     ← Python 包配置（pip install -e .）
 #   requirements.txt   ← pip 依赖清单（可选）
 #   scripts/install.sh ← 安装脚本（安装到目标后保留，用于卸载/重装）
-#   README.md / INSTALL.md ← 文档
+#   README.md / INSTALL.md / CHANGELOG.md ← 文档
 #   src/               ← Clean Architecture 源码
 #   tests/             ← 测试套件
 #   docs/              ← 文档
@@ -368,8 +368,8 @@ install_skill() {
         cp -r "${REPO_ROOT}/scripts" "${SKILL_DEST}/scripts"
     fi
 
-    # README/INSTALL（如存在）
-    for doc in README.md INSTALL.md; do
+    # README/INSTALL/CHANGELOG（如存在）
+    for doc in README.md INSTALL.md CHANGELOG.md; do
         [[ -f "${REPO_ROOT}/${doc}" ]] && \
             cp "${REPO_ROOT}/${doc}" "${SKILL_DEST}/${doc}"
     done

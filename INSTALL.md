@@ -533,20 +533,31 @@ bash scripts/install.sh  # 自动备份旧版本
 
 ```
 ~/.agents/skills/ai-content-studio/
-├── SKILL.md                 # Skill 主入口（含 OpenClaw metadata）
-├── requirements.txt          # Python 依赖清单
+├── SKILL.md                 # Skill 主入口（含触发条件和用法）
+├── pyproject.toml           # Python 包配置（pip install -e .）
+├── requirements.txt         # pip 依赖清单（可选）
+├── README.md                # 项目说明（可选）
+├── INSTALL.md               # 本安装指南（可选）
+├── CHANGELOG.md             # 版本变更记录（可选）
 ├── scripts/
 │   ├── install.sh           # 多 Agent 安装脚本
-│   └── studio/              # TTS 引擎源码
-│       ├── paths.py         # 路径配置
-│       ├── studio_orchestrator.py
-│       └── ...
-├── references/
-│   └── configs/             # 角色库配置
-└── tests/
-    ├── test_minimax_tts.py
-    ├── test_qwen_omni_tts.py
-    └── test_install.sh      # 安装脚本测试
+│   └── test_voices.py       # 音色测试工具
+├── src/                     # Clean Architecture 源码
+│   ├── adapters/            # TTS 引擎适配器
+│   ├── core/                # 核心引擎（TTS + LLM）
+│   ├── entities/            # 数据实体
+│   ├── infrastructure/      # CLI 和依赖注入
+│   ├── services/            # API 客户端
+│   └── use_cases/           # 业务用例
+├── tests/                   # 测试套件
+│   ├── test_adapters/
+│   ├── test_entities/
+│   ├── test_infrastructure/
+│   └── test_use_cases/
+├── docs/                    # 文档（可选）
+│   └── TROUBLESHOOTING.md   # 故障排查指南
+└── references/              # 参考配置（可选）
+    └── configs/             # 角色库配置
 
 # 符号链接
 ~/.claude/skills/ai-content-studio → ~/.agents/skills/ai-content-studio

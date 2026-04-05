@@ -242,3 +242,108 @@ class QwenOmniTTSEngine(BaseTTSEngine, TTSEngineInterface):
         bytes_per_sample = 2
         duration = len(audio_data) / (sample_rate * bytes_per_sample)
         return duration
+
+
+class QwenTTSEngineAdapter(TTSEngineInterface):
+    """
+    Qwen TTS 引擎适配器（qwen3-tts-flash）
+
+    职责：
+    - 实现 TTSEngineInterface
+    - 包装核心 QwenTTSEngine
+    - 处理专用 TTS API 调用
+
+    注意：不继承 BaseTTSEngine，因为直接调用核心引擎，不使用基类的 _call_api()
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str = "https://dashscope.aliyuncs.com",
+    ):
+        """
+        初始化 Qwen TTS 引擎
+
+        Args:
+            api_key: API 密钥
+            base_url: API 基础 URL
+        """
+        # 导入核心引擎
+        from ..core.tts_engines.qwen_tts import QwenTTSEngine
+        self._engine = QwenTTSEngine(api_key=api_key, base_url=base_url)
+
+    def get_engine_name(self) -> str:
+        """获取引擎名称"""
+        return "qwen_tts"
+
+    def synthesize(self, request: TTSRequest) -> EngineResult:
+        """
+        合成语音
+
+        Args:
+            request: TTS 请求
+
+        Returns:
+            EngineResult: 合成结果
+        """
+        try:
+            # 调用核心引擎
+            success = self._engine.synthesize(
+                text=request.text,
+                output_file=str(request.output_file),
+                voice=request.voice_id,
+                speed=request.speed,
+                language=getattr(request.voice_config, "language", "Auto") if request.voice_config else "Auto"
+            )
+
+            if success:
+                # 估算时长
+                duration = self._estimate_duration(request.output_file)
+                return EngineResult.success(
+                    file_path=request.output_file,
+                    duration=duration,
+                    engine_name=self.get_engine_name(),
+                )
+            else:
+                return EngineResult.failure(
+                    error_message="Qwen TTS 合成失败",
+                    engine_name=self.get_engine_name(),
+                )
+
+        except Exception as e:
+            logger.error(f"Qwen TTS 合成失败: {str(e)}", exc_info=True)
+            return EngineResult.failure(
+                error_message=f"Qwen TTS 合成失败: {str(e)}",
+                engine_name=self.get_engine_name(),
+            )
+
+    def _estimate_duration(self, audio_file: Path) -> float:
+        """
+        估算音频时长（不调用 ffprobe，避免子进程开销）
+
+        Args:
+            audio_file: 音频文件路径
+
+        Returns:
+            float: 时长（秒）
+        """
+        try:
+            file_size = audio_file.stat().st_size
+
+            # 根据文件扩展名选择估算方法
+            if audio_file.suffix.lower() == ".mp3":
+                # MP3 格式：QwenTTSEngine 使用 128kbps 比特率
+                bitrate = 128000  # bits per second
+                duration = (file_size * 8) / bitrate
+            else:
+                # WAV 格式：16kHz, 16-bit, mono
+                audio_bytes = max(0, file_size - 44)  # WAV header = 44 bytes
+                sample_rate = 16000
+                bytes_per_sample = 2
+                duration = audio_bytes / (sample_rate * bytes_per_sample)
+
+            return duration
+        except Exception as e:
+            logger.warning(f"无法读取音频文件大小: {audio_file}, 错误: {e}")
+            return 0.0
+
