@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.0] - 2026-04-05
+
+### ✨ New Features
+- **QwenTTSEngineAdapter**: 专用 TTS 引擎适配器，支持 `qwen3-tts-flash` 引擎
+- **懒加载初始化**: Container 使用懒加载模式，按需初始化 TTS 引擎
+
+### 🔄 Improvements
+- **备份机制优化**: 迁移到 `/tmp/ai-content-studio-backups/`，避免污染 skills 目录
+- **自动备份清理**: 7 天后自动清理备份文件
+- **资源占用优化**: 减少不必要的引擎初始化开销
+- **安装包完整性**: CHANGELOG.md 包含到安装 bundle
+
+### 🐛 Bug Fixes
+- **遗留备份清理**: 自动删除旧版本遗留的备份文件
+
+### 📝 Documentation
+- 更新 INSTALL.md 文件结构说明
+- 补充历史版本变更记录（v1.1.0, v1.1.1）
+
 ## [1.1.2] - 2026-04-05
 
 ### Added
