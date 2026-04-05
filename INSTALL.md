@@ -23,7 +23,65 @@
 
 ---
 
-## 2. 快速安装
+## 2. 首次安装
+
+### 2.1 从 GitHub 获取源代码
+
+#### 方式 1: Git Clone（推荐）
+
+```bash
+# Clone 仓库到主路径
+git clone https://github.com/hrygo/ai-content-studio.git \
+    "${HOME}/.agents/skills/ai-content-studio"
+
+# 进入源码目录
+cd "${HOME}/.agents/skills/ai-content-studio"
+```
+
+#### 方式 2: 下载 Release 包
+
+```bash
+# 下载最新 release
+curl -L https://github.com/hrygo/ai-content-studio/archive/refs/tags/v1.2.0.tar.gz \
+    -o ai-content-studio.tar.gz
+
+# 解压到主路径
+mkdir -p "${HOME}/.agents/skills"
+tar -xzf ai-content-studio.tar.gz -C "${HOME}/.agents/skills/"
+mv "${HOME}/.agents/skills/ai-content-studio-1.2.0" \
+   "${HOME}/.agents/skills/ai-content-studio"
+
+# 进入源码目录
+cd "${HOME}/.agents/skills/ai-content-studio"
+```
+
+### 2.2 执行安装脚本
+
+```bash
+# 一键安装到所有 Agent
+bash scripts/install.sh
+```
+
+安装脚本会自动：
+1. ✅ 创建符号链接（Claude Code / OpenCode / OpenClaw）
+2. ✅ 安装 Python 依赖（requests/tenacity/rich/cachetools）
+3. ✅ 验证系统依赖（ffmpeg）
+4. ✅ 备份旧版本（自动迁移到 `/tmp`）
+
+### 2.3 验证安装
+
+```bash
+# 检查 CLI 工具
+ai-studio --version
+# 预期输出：ai-studio, version 1.2.0
+
+# 测试 TTS 功能
+ai-studio synthesize --source "测试文本" -o test.mp3
+```
+
+---
+
+## 3. 快速安装（本地源码）
 
 ### 2.1 一键安装所有 Agent
 
@@ -51,7 +109,7 @@ bash scripts/install.sh --agent openclaw
 
 ---
 
-## 3. Agent 特定安装
+## 4. Agent 特定安装
 
 ### 3.1 Claude Code
 
@@ -123,18 +181,18 @@ ls ~/.agents/skills/ai-content-studio/SKILL.md
 
 ---
 
-## 4. 手动安装（无脚本环境）
+## 5. 手动安装（无脚本环境）
 
 如果安装脚本不可用，Agent 可直接执行以下命令：
 
-### 4.1 定义路径变量
+### 5.1 定义路径变量
 
 ```bash
 SKILL_SOURCE="$(pwd)"                    # skill 源码仓库
 SKILL_DEST="${HOME}/.agents/skills/ai-content-studio"  # 主路径
 ```
 
-### 4.2 复制 skill bundle
+### 5.2 复制 skill bundle
 
 ```bash
 # 创建主目录
@@ -148,7 +206,7 @@ cp -r "${SKILL_SOURCE}/references/" "${SKILL_DEST}/"
 cp -r "${SKILL_SOURCE}/tests/" "${SKILL_DEST}/"
 ```
 
-### 4.3 创建符号链接
+### 5.3 创建符号链接
 
 ```bash
 # Claude Code
@@ -164,7 +222,7 @@ mkdir -p "${HOME}/.openclaw/skills/"
 ln -sf "$SKILL_DEST" "${HOME}/.openclaw/skills/ai-content-studio"
 ```
 
-### 4.4 验证安装
+### 5.4 验证安装
 
 ```bash
 # 检查主安装
@@ -178,7 +236,7 @@ readlink "${HOME}/.openclaw/skills/ai-content-studio"  # OpenClaw
 
 ---
 
-## 5. Git Clone 方式（版本管理）
+## 6. Git Clone 方式（版本管理）
 
 如果 skill 已托管到 Git 仓库：
 
@@ -205,16 +263,92 @@ ln -sf "${HOME}/.agents/skills/ai-content-studio" "${HOME}/.openclaw/skills/ai-c
 
 ---
 
-## 6. 卸载
+## 7. 更新现有安装
 
-### 6.1 通用卸载
+### 7.1 Git Pull 方式（推荐）
+
+如果使用 Git Clone 方式安装，可以直接拉取最新代码：
+
+```bash
+# 进入主安装目录
+cd "${HOME}/.agents/skills/ai-content-studio"
+
+# 查看当前版本
+git describe --tags  # 输出示例：v1.2.0
+
+# 拉取最新代码
+git pull origin main
+
+# 查看更新内容
+git log --oneline --decorate -5
+
+# 重新安装（更新符号链接和依赖）
+bash scripts/install.sh
+```
+
+### 7.2 切换到特定版本
+
+```bash
+# 查看所有版本
+git tag --sort=-version:refname
+
+# 切换到指定版本
+git checkout v1.2.0
+
+# 重新安装
+bash scripts/install.sh
+```
+
+### 7.3 重新下载 Release 包
+
+如果使用 Release 包安装：
+
+```bash
+# 备份当前安装
+mv "${HOME}/.agents/skills/ai-content-studio" \
+   "${HOME}/.agents/skills/ai-content-studio.backup_$(date +%Y%m%d_%H%M%S)"
+
+# 下载新版本
+curl -L https://github.com/hrygo/ai-content-studio/archive/refs/tags/v1.2.0.tar.gz \
+    -o ai-content-studio.tar.gz
+
+# 解压
+tar -xzf ai-content-studio.tar.gz -C "${HOME}/.agents/skills/"
+mv "${HOME}/.agents/skills/ai-content-studio-1.2.0" \
+   "${HOME}/.agents/skills/ai-content-studio"
+
+# 重新安装
+cd "${HOME}/.agents/skills/ai-content-studio"
+bash scripts/install.sh
+```
+
+### 7.4 验证更新
+
+```bash
+# 检查版本号
+ai-studio --version
+
+# 检查符号链接
+ls -la ~/.claude/skills/ai-content-studio
+ls -la ~/.config/opencode/skills/ai-content-studio
+ls -la ~/.openclaw/skills/ai-content-studio
+
+# 测试功能
+ai-studio --help
+```
+
+---
+
+## 8. 卸载
+
+### 8.1 通用卸载
 
 ```bash
 # 卸载所有 Agent 的安装
 bash scripts/install.sh --uninstall
 ```
 
-### 6.2 选择性卸载
+### 8.2 选择性卸载
 
 ```bash
 # 手动删除符号链接
@@ -228,9 +362,9 @@ rm -rf "${HOME}/.agents/skills/ai-content-studio"
 
 ---
 
-## 7. 故障排查
+## 9. 故障排查
 
-### 7.1 Skill 未激活
+### 9.1 Skill 未激活
 
 | 检查项 | 命令 |
 |--------|------|
@@ -239,7 +373,7 @@ rm -rf "${HOME}/.agents/skills/ai-content-studio"
 | 检查主安装 | `ls -la ~/.agents/skills/ai-content-studio/SKILL.md` |
 | 重启会话 | 退出并重新进入 Agent 会话 |
 
-### 7.2 符号链接失效
+### 9.2 符号链接失效
 
 ```bash
 # 诊断
@@ -250,7 +384,7 @@ readlink ~/.claude/skills/ai-content-studio
 bash scripts/install.sh  # 重新创建所有链接
 ```
 
-### 7.3 脚本执行失败
+### 9.3 脚本执行失败
 
 ```bash
 # 检查执行权限
@@ -262,7 +396,7 @@ chmod +x scripts/install.sh
 bash -x scripts/install.sh
 ```
 
-### 7.4 备份冲突
+### 9.4 备份冲突
 
 旧版本备份占用空间，可手动清理：
 
@@ -275,11 +409,11 @@ rm -rf ~/.claude/skills/ai-content-studio.legacy_*
 
 ---
 
-## 8. 依赖
+## 10. 依赖
 
 Skill 安装完成后，Agent 需要确保以下运行时依赖已就绪。
 
-### 8.1 Python 环境（Agent 自动检测）
+### 10.1 Python 环境（Agent 自动检测）
 
 AI Agent 应在执行任务前自动检测 Python 环境，缺失时引导用户安装：
 
@@ -319,7 +453,7 @@ if ! command -v python3 &>/dev/null; then
 fi
 ```
 
-### 8.2 系统依赖
+### 10.2 系统依赖
 
 | 依赖 | 说明 | 安装命令 |
 |------|------|---------|
@@ -341,7 +475,7 @@ fi
 ffmpeg -version | head -n1
 ```
 
-### 8.3 Python 依赖
+### 10.3 Python 依赖
 
 安装 Python 包：
 
@@ -443,7 +577,7 @@ python3 -m pip install -e "$SKILL_DIR" \
 
 </details>
 
-### 8.4 语音处理库（进阶）
+### 10.4 语音处理库（进阶）
 
 以下库为可选，用于增强本地音频处理能力：
 
@@ -457,7 +591,7 @@ python3 -m pip install matplotlib numpy  # 音频波形绘图
 
 > **注意**：核心 TTS 功能依赖云端 API（DashScope/MiniMax），本地库为辅助工具，非必需。
 
-### 8.5 API Key 配置
+### 10.5 API Key 配置
 
 从 `~/.config/opencode/opencode.json` 自动读取：
 - `provider.bailian.options.apiKey` → Qwen（DASHSCOPE_API_KEY）
@@ -482,16 +616,16 @@ fi
 
 ---
 
-## 9. 安装后验证
+## 11. 安装后验证
 
-### 9.1 文件结构检查
+### 11.1 文件结构检查
 
 ```bash
 tree -L 2 ~/.agents/skills/ai-content-studio/
 # 应包含：SKILL.md, scripts/, references/, tests/
 ```
 
-### 9.2 路径验证矩阵
+### 11.2 路径验证矩阵
 
 ```bash
 echo "=== 路径验证 ==="
@@ -501,7 +635,7 @@ echo "OpenCode:  $([[ -L ~/.config/opencode/skills/ai-content-studio ]] && echo 
 echo "OpenClaw:  $([[ -L ~/.openclaw/skills/ai-content-studio ]] && echo '✓ 链接' || echo '✗ 缺失')"
 ```
 
-### 9.3 Skill 激活测试
+### 11.3 Skill 激活测试
 
 在 ai-content-studio 项目目录发起任务：
 
@@ -516,7 +650,7 @@ Agent 应能：
 
 ---
 
-## 10. 更新 Skill
+## 12. 更新 Skill
 
 skill 源码更新后，重新运行安装脚本：
 
@@ -527,7 +661,7 @@ bash scripts/install.sh  # 自动备份旧版本
 
 ---
 
-## 11. 文件结构
+## 13. 文件结构
 
 安装后的 skill 目录结构：
 
