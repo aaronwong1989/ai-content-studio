@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.1.2] - 2026-04-05
+
+### Added
+- **QwenTTSEngineAdapter**: 新增专用 TTS 引擎适配器，支持 `qwen3-tts-flash` 引擎。
+
+### Changed
+- **懒加载优化**: Container 使用懒加载模式初始化 QwenTTSEngineAdapter，减少资源占用。
+- **安装包完整性**: 安装脚本现在包含 CHANGELOG.md 到安装 bundle。
+- **文档更新**: INSTALL.md 文件结构说明同步到当前实现。
+
 ## [1.1.1] - 2026-04-05
 
 ### Changed
